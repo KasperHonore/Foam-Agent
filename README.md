@@ -4,6 +4,15 @@
     <em>OpenFOAM CFD simulation driven by whatever AI agent you already use — no API key in the box.</em>
 </p>
 
+<p align="center">
+    <img src="https://img.shields.io/badge/Claude_Code-supported-6B4FBB" alt="Claude Code">
+    <img src="https://img.shields.io/badge/Cursor-supported-000000" alt="Cursor">
+    <img src="https://img.shields.io/badge/Codex-supported-10A37F" alt="Codex">
+    <img src="https://img.shields.io/badge/OpenCode-supported-F5A623" alt="OpenCode">
+    <img src="https://img.shields.io/badge/pi-supported-4A90D9" alt="pi">
+    <img src="https://img.shields.io/badge/API_keys-none_required-2EA44F" alt="No API keys">
+</p>
+
 **Foam-Agent** automates the entire **Foundation OpenFOAM v10** CFD workflow — meshing, case setup, execution, error correction, post-processing — from a single natural language prompt. This fork of [csml-rpi/Foam-Agent](https://github.com/csml-rpi/Foam-Agent) restructures it around a **"brain out, hands in"** architecture:
 
 ```
@@ -20,18 +29,53 @@ foamagent-mcp in Docker       15 mechanical tools, ZERO API keys:
 
 The intelligence comes from the AI subscription you already pay for. The container only needs OpenFOAM, the tutorial database, and local embeddings.
 
+## Features
+
+| | Capability |
+|---|---|
+| 🗣️ | **Prompt → simulation** — describe any CFD problem in plain language; the agent plans, writes all case files, runs, and reports |
+| 📚 | **Tutorial RAG** — semantic retrieval over all Foundation v10 tutorials with local embeddings (key-free) |
+| 🔁 | **Auto error correction** — failed runs are diagnosed and fixed in a dedicated debug loop until the case converges |
+| 🕸️ | **GMSH meshing** — geometry described in words becomes a validated `constant/polyMesh` |
+| 🖼️ | **PyVista post-processing** — headless field rendering to PNG |
+| 🖥️ | **HPC/SLURM** — job submission and polling for cluster runs |
+| 🔌 | **5 CLIs, one repo** — MCP registration and skills committed for Claude Code, Cursor, Codex, OpenCode, and pi |
+| 🔒 | **Key-free server** — the Docker container needs no LLM provider; your harness brings the model |
+| 🧾 | **Update contract** — `git pull` and `docker pull` never touch your simulations, prompts, meshes, or local settings |
+
 ## Quick start
+
+**1. Clone and start the server** (Docker required; FAISS indices are baked into the image):
 
 ```bash
 git clone https://github.com/KasperHonore/Foam-Agent.git
 cd Foam-Agent
 
-# Pull the prebuilt server image and start it (FAISS indices are baked in)
 docker pull ghcr.io/kasperhonore/foamagent:latest
 docker tag ghcr.io/kasperhonore/foamagent:latest foamagent:latest
 docker run -d --name foamagent-mcp --restart unless-stopped -p 7860:7860 \
   foamagent:latest python -m src.mcp.fastmcp_server --transport http --host 0.0.0.0 --port 7860
 ```
+
+**2. Open the repo in your AI CLI and let it finish the setup** — no manual file editing:
+
+```bash
+claude   # or cursor / codex / opencode / pi
+```
+
+```
+> onboard me
+```
+
+The `foam-onboard` skill health-checks the server, warms the embedding model (one-time ~1.2 GB download), offers a demo simulation, and gives you a tour. MCP registration is already committed for every supported CLI, so the tools are wired the moment you open the repo.
+
+**3. Simulate:**
+
+```
+/foam Simulate lid-driven cavity flow at Re=1000
+```
+
+Prefer to verify things yourself first? `python scripts/doctor.py` runs the same health checks without an agent and prints exact fix commands.
 
 <details>
 <summary>Build the image from source instead</summary>
@@ -43,13 +87,37 @@ docker build -f docker/Dockerfile -t foamagent:latest .   # first build: 30-45 m
 
 </details>
 
-Then open the repo in your agent tool. **MCP registration is already committed** — `.mcp.json` (Claude Code), `.cursor/mcp.json`, `opencode.json`, `.codex/config.toml` all point at `http://localhost:7860/mcp`. Ask naturally, or in Claude Code:
+## Usage
+
+Where slash commands exist (Claude Code), use them; everywhere else, just say it in plain language — the skills trigger either way.
+
+| Command | Plain-language equivalent | What happens |
+|---|---|---|
+| `/foam-onboard` | "get me set up" / "onboard me" | Guided first-run: health check → warm-up → demo → tour |
+| `/foam <requirement>` | "simulate flow over a cylinder at Re=40" | Full pipeline: plan → generate case → run → debug loop → visualize |
+| `/foam-setup` | "the foam server isn't responding" | Doctor: diagnoses Docker/image/container/LFS and brings the server up |
+| — | "mesh a 2D channel with a cylinder using gmsh" | foam-mesher subagent: GMSH → gmshToFoam → checkMesh |
+| — | "plot the velocity field of the last run" | foam-visualizer subagent: headless PyVista → PNG |
+
+## How it works
 
 ```
-/foam Simulate lid-driven cavity flow at Re=1000
+"Simulate dam break with two fluids"
+        │
+        ▼
+  PLAN        find_similar_case → closest v10 tutorial as reference
+        │
+        ▼
+  GENERATE    write_case_file × N → 0/, system/, constant/, Allrun
+        │
+        ▼
+  RUN         run_case → success ─────────────► VISUALIZE (PyVista → PNG)
+        │                                             ▲
+        ▼ errors                                      │
+  DEBUG       foam-debugger: diagnose → rewrite → rerun (until converged)
 ```
 
-Something not responding? The `/foam-setup` skill (or [agents/skills/foam-setup/SKILL.md](agents/skills/foam-setup/SKILL.md)) diagnoses Docker/image/container/LFS issues step by step.
+Every simulation lands in its own directory under `runs/`, with full logs.
 
 ## Updating
 
@@ -65,6 +133,24 @@ docker rm -f foamagent-mcp && docker run -d --name foamagent-mcp --restart unles
 
 **The contract:** `git pull` never touches your simulations (`runs/`, `output/`), your prompts and meshes at the repo root (`user_requirement.txt`, `user_req_*.txt`, `*.msh`), or your local agent settings (`CLAUDE.md`, `.claude/settings.local.json`, `.claude/memory/`) — they are all gitignored. Skills and their matching server version update together in lockstep.
 
+## Project structure
+
+```
+Foam-Agent/
+├── agents/               # CANONICAL skills + subagents (edit here)
+│   ├── skills/           #   foam, foam-setup, foam-onboard
+│   └── subagents/        #   foam-debugger, foam-mesher, foam-visualizer
+├── .claude/ .cursor/ .codex/ .opencode/ .pi/   # generated per-CLI copies + MCP configs
+├── src/mcp/              # the FastMCP server (the "hands")
+├── src/                  # legacy LangGraph pipeline (needs an LLM key)
+├── database/faiss/       # pre-built tutorial indices (git-lfs)
+├── docker/               # server image
+├── examples/             # sample prompts + meshes (copy to root to use)
+├── scripts/              # doctor.py, sync_agent_assets.py, ...
+├── tests/                # key-free unit tests + e2e vs a running server
+└── runs/                 # YOUR simulations (gitignored)
+```
+
 ## Skills and subagents
 
 Canonical definitions live in [`agents/`](agents) and are fanned out to every tool's native location (`.claude/`, `.cursor/`, `.codex/`, `.opencode/`, `.pi/`) by `python scripts/sync_agent_assets.py` — edit the canonical files, never the generated copies.
@@ -72,6 +158,7 @@ Canonical definitions live in [`agents/`](agents) and are fanned out to every to
 | Asset | Role |
 |---|---|
 | `foam` skill | End-to-end orchestration: plan → generate case → run → debug loop → visualize, with reference docs on v10 conventions, file generation, multiphase/VOF, Allrun rules, error playbook, SLURM |
+| `foam-onboard` skill | Guided first-run: health check → warm-up → demo simulation → tour |
 | `foam-setup` skill | Preflight/doctor for the server |
 | `foam-debugger` subagent | Owns the diagnose → rewrite → rerun loop |
 | `foam-mesher` subagent | GMSH mesh generation → gmshToFoam → checkMesh |
@@ -130,11 +217,14 @@ Sample prompts and meshes live in [`examples/`](examples). To write your own, co
 python -m pytest tests/test_mechanics_unit.py       # key-free unit tests + asset drift check
 python tests/test_lid_driven_cavity_mcp.py          # deterministic e2e vs a running server
 python scripts/sync_agent_assets.py                 # regenerate per-tool skill/agent copies
+python scripts/doctor.py                            # validate the local setup (read-only)
 ```
 
 `AGENTS.md` documents the architecture for AI coding agents working on this repo.
 
 ## Troubleshooting
+
+First stop: `python scripts/doctor.py` — it checks LFS, Docker, image, container, and the MCP endpoint, and prints exact fix commands. For everything else (API keys, disk space, custom meshes, updating, ESI vs Foundation), see the [FAQ](FAQ.md).
 
 | Problem | Solution |
 |---|---|
@@ -142,6 +232,10 @@ python scripts/sync_agent_assets.py                 # regenerate per-tool skill/
 | First retrieval call takes minutes | One-time ~1.2 GB embedding model download inside the container — not a hang |
 | Retrieval errors / index not loaded | `git lfs pull` before building the image |
 | `WM_PROJECT_DIR is not set` | Recreate the container so the entrypoint sources OpenFOAM |
+
+## Share your simulation
+
+Ran something cool? Open a ["Share your simulation"](https://github.com/KasperHonore/Foam-Agent/issues/new?template=share-your-simulation.yml) issue — prompt, solver, and a picture is all it takes. Real-world cases directly shape which skills and error-playbook entries get improved next.
 
 ## Citation
 

@@ -18,7 +18,11 @@ Foam-Agent automates CFD (Computational Fluid Dynamics) simulations in **Foundat
 - **Generated copies (do NOT edit):** `.claude/skills`, `.claude/agents`, `.opencode/skill`, `.opencode/agent`, `.codex/skills`, `.pi/skills`, `.cursor/skills`, `.cursor/rules/foamagent-skills.mdc`. Regenerate with `python scripts/sync_agent_assets.py` (CI runs `--check`).
 - **MCP registration is committed per tool:** `.mcp.json` (Claude Code), `.cursor/mcp.json`, `opencode.json`, `.codex/config.toml` — all pointing at `http://localhost:7860/mcp` (start it with Docker, see `src/mcp/README.md`).
 - **Universal fallback:** if your tool auto-discovers none of the above, read `agents/skills/foam/SKILL.md` when the user asks for a CFD simulation and follow it; subagent roles are in `agents/subagents/` — follow them inline.
-- **Server not responding?** Follow `agents/skills/foam-setup/SKILL.md` — it diagnoses and starts the Dockerized MCP server (no API key needed).
+- **Server not responding?** Follow `agents/skills/foam-setup/SKILL.md` — it diagnoses and starts the Dockerized MCP server (no API key needed). `python scripts/doctor.py` runs the same checks deterministically (read-only, prints fix commands).
+
+## First run? Onboard the user
+
+If the user seems new here — says "get me set up", "onboard me", "what is this repo?", "getting started", or asks for a simulation on a machine where the `foamagent` MCP tools don't respond — follow `agents/skills/foam-onboard/SKILL.md`. It walks them conversationally through: health check (`python scripts/doctor.py`) → fixing anything broken (via foam-setup) → one-time embedding warm-up → an optional demo simulation (lid-driven cavity) → a short tour. Never make the user edit files by hand during setup.
 
 ## Build and Run
 

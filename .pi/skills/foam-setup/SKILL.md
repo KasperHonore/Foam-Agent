@@ -11,6 +11,10 @@ The `foamagent` MCP server runs in Docker and needs no API key. This skill
 gets it from "nothing works" to "healthy" with the minimum number of steps.
 Work through the checks IN ORDER — each assumes the previous ones passed.
 
+Shortcut: `python scripts/doctor.py` runs checks 2–5 below deterministically
+(read-only) and prints exact fix commands — run it first to see where things
+stand, then work the failing step here.
+
 ## 1. Quick health check
 
 Call the `get_case_stats` MCP tool. If it returns lists of domains,

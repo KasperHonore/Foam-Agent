@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: ❓ FAQ
+    url: https://github.com/KasperHonore/Foam-Agent/blob/main/FAQ.md
+    about: Common questions — API keys, OpenFOAM versions, updating, disk space, custom meshes — answered here.

@@ -1,0 +1,61 @@
+name: "🌊 Share your simulation"
+description: "Ran something cool with Foam-Agent? Show it off — prompt, solver, and a picture is all it takes."
+title: "[Showcase] "
+labels: ["showcase"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for sharing! Real-world cases directly shape which skills, references,
+        and error-playbook entries get improved next. A screenshot or PyVista render
+        makes this 10× better — drag & drop images straight into the text fields.
+  - type: input
+    id: what
+    attributes:
+      label: What did you simulate?
+      placeholder: "e.g. Dam break with two fluids, VOF, 2D"
+    validations:
+      required: true
+  - type: textarea
+    id: prompt
+    attributes:
+      label: The prompt you used
+      description: The natural-language requirement you gave your agent (paste it verbatim).
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: solver
+    attributes:
+      label: Solver
+      placeholder: "e.g. interFoam, simpleFoam, pimpleFoam"
+    validations:
+      required: true
+  - type: input
+    id: harness
+    attributes:
+      label: Agent CLI + model
+      placeholder: "e.g. Claude Code + Opus 4.8, Cursor + ..., Codex + ..."
+    validations:
+      required: true
+  - type: textarea
+    id: results
+    attributes:
+      label: Results
+      description: "Screenshots, PyVista renders, plots, key numbers (Cd, reattachment length, ...) — anything that shows the outcome."
+    validations:
+      required: true
+  - type: textarea
+    id: journey
+    attributes:
+      label: How did the run go?
+      description: "First try or debug loops? Mesh from blockMesh, GMSH, or your own .msh? Anything the agent struggled with?"
+    validations:
+      required: false
+  - type: textarea
+    id: improve
+    attributes:
+      label: What would have made it better?
+      description: "Missing skill knowledge, error the debugger didn't recognize, a tool you wished existed."
+    validations:
+      required: false
