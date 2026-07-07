@@ -30,9 +30,12 @@ filesystem:
    failure modes) and go back to step 2.
 5. **Validate quality**: `run_openfoam_command(case_dir, "checkMesh")`. If it
    reports "Failed N mesh checks", adjust sizing/refinement and regenerate.
-6. For **2D cases**, edit `constant/polyMesh/boundary` so the front/back
-   plane patches have `type empty;` (and `physicalType empty;`), leaving all
-   other patches untouched.
+6. **Fix patch types** in `constant/polyMesh/boundary` — gmshToFoam leaves
+   every patch as `type patch;`. For 2D cases set the front/back planes to
+   `type empty;` (and `physicalType empty;`). Set solid surfaces (obstacle,
+   channel walls with no-slip) to `type wall;` — required for wall functions
+   in turbulent cases and correct even in laminar ones. Leave inlet/outlet
+   as `patch`.
 
 Iterate up to 3 times per failure type; then report honestly what failed.
 
@@ -48,12 +51,30 @@ Iterate up to 3 times per failure type; then report honestly what failed.
   classify them with `gmsh.model.getBoundingBox(dim, tag)` — never
   `getCenterOfMass`. Define `z_min`/`z_max` variables and use bounding-box
   coordinates consistently for ALL boundaries.
+- **Classify by elimination**: bounding boxes can only positively identify
+  PLANAR surfaces (a plane is thin in one axis). Match all planar far-field
+  boundaries (inlet/outlet/top/bottom/frontAndBack) by their bbox planes
+  first; assign every surface left unmatched to the curved-obstacle patch
+  (cylinder, airfoil, ...). Never try to bbox-match a curved surface
+  directly — it works only by coincidence and breaks with multiple obstacles.
+- Compare with tolerance, never equality: gmsh returns values like `-0.000`
+  (tiny negatives) for coordinates that are conceptually zero. Always
+  `abs(a - b) < tol`, never `a == b`.
 - Thin-surface detection at the extrusion planes:
   `abs(zmin - zmax) < tol and (abs(zmin - z_min) < tol or abs(zmin - z_max) < tol)`
   with `tol = 1e-6`.
 - Every surface must land in a physical group named exactly after the
-  user-specified boundaries (plus one volume group for the domain). Any
-  unassigned surface becomes `defaultFaces` — that is a bug.
+  user-specified boundaries (plus one volume group for the domain — without
+  it gmshToFoam produces zero cells). Any unassigned surface becomes
+  `defaultFaces` — that is a bug.
+- **Print a full surface→group classification table** (tag, bbox, assigned
+  group) before saving — `run_python_script` returns your stdout, and that
+  table is how you verify the mesh before conversion.
+- For local refinement use mesh size fields: a `Distance` field on the
+  obstacle curves + a `Threshold` field ramping from the wall size (e.g.
+  D/20) to the far-field size over a chosen distance band, then
+  `gmsh.model.mesh.field.setAsBackgroundMesh`. This is also the lever for
+  fixing checkMesh quality failures.
 - `gmsh.option.setNumber('Mesh.MshFileVersion', 2.2)` for OpenFOAM
   compatibility; save as `geometry.msh`; call `gmsh.finalize()`.
 
