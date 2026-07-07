@@ -36,6 +36,14 @@ lid-driven cavity flow at Re=1000").
 
 ## Workflow
 
+### 0. Preflight
+
+If the foamagent tools don't respond (connection refused, tools missing),
+run the **foam-setup** skill first — it diagnoses Docker/image/container
+issues and brings the server up. Also note: the FIRST retrieval call after a
+server start downloads the embedding model (~1.2 GB) and can take minutes —
+that is not a hang.
+
 ### 1. Plan the case
 
 1. Call `get_case_stats` to see the valid `case_domain`, `case_category` and

@@ -9,6 +9,7 @@ When the user asks to set up, run, debug or visualize an OpenFOAM CFD
 simulation, use the matching Foam-Agent skill:
 
 - `foam`: read and follow `.cursor/skills/foam/SKILL.md`
+- `foam-setup`: read and follow `.cursor/skills/foam-setup/SKILL.md`
 
 These skills orchestrate the `foamagent` MCP tools (tutorial retrieval, case
 file I/O, simulation execution). Follow the referenced SKILL.md step by step;

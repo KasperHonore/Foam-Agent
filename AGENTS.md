@@ -18,6 +18,7 @@ Foam-Agent automates CFD (Computational Fluid Dynamics) simulations in **Foundat
 - **Generated copies (do NOT edit):** `.claude/skills`, `.claude/agents`, `.opencode/skill`, `.opencode/agent`, `.codex/skills`, `.pi/skills`, `.cursor/skills`, `.cursor/rules/foamagent-skills.mdc`. Regenerate with `python scripts/sync_agent_assets.py` (CI runs `--check`).
 - **MCP registration is committed per tool:** `.mcp.json` (Claude Code), `.cursor/mcp.json`, `opencode.json`, `.codex/config.toml` — all pointing at `http://localhost:7860/mcp` (start it with Docker, see `src/mcp/README.md`).
 - **Universal fallback:** if your tool auto-discovers none of the above, read `agents/skills/foam/SKILL.md` when the user asks for a CFD simulation and follow it; subagent roles are in `agents/subagents/` — follow them inline.
+- **Server not responding?** Follow `agents/skills/foam-setup/SKILL.md` — it diagnoses and starts the Dockerized MCP server (no API key needed).
 
 ## Build and Run
 
