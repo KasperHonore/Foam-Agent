@@ -204,9 +204,10 @@ async def list_case_files(
     case_dir: str = Field(description="Case directory"),
     ctx: Context = None,
 ) -> Dict[str, List[str]]:
-    """List the case directory structure: {folder: [files]} plus top-level files under '.'."""
+    """List the full case directory structure (recursive): {folder: [files]} with
+    relative-path keys like 'constant/polyMesh', plus top-level files under '.'."""
     case_dir = _abs_case_dir(case_dir)
-    structure = mechanics.scan_case_directory(case_dir)
+    structure = mechanics.scan_case_directory(case_dir, deep=True)
     top_level = [
         f for f in os.listdir(case_dir)
         if os.path.isfile(os.path.join(case_dir, f)) and not f.startswith(".")

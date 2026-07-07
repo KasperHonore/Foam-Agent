@@ -36,6 +36,22 @@ def test_save_scan_read_roundtrip(tmp_path):
     assert "dimensions" in by_name["U"]["content"]
 
 
+def test_scan_case_directory_deep_surfaces_polymesh(tmp_path):
+    case = tmp_path / "case"
+    mechanics.save_file(str(case / "system" / "controlDict"), "FoamFile {}\n")
+    mechanics.save_file(str(case / "constant" / "physicalProperties"), "nu 1e-05;\n")
+    mechanics.save_file(str(case / "constant" / "polyMesh" / "boundary"), "3 ()\n")
+    mechanics.save_file(str(case / "constant" / "polyMesh" / "points"), "0 ()\n")
+
+    shallow = mechanics.scan_case_directory(str(case))
+    assert "constant/polyMesh" not in shallow  # default stays shallow: read_case_files must not ingest mesh data
+
+    deep = mechanics.scan_case_directory(str(case), deep=True)
+    assert deep["constant"] == ["physicalProperties"]
+    assert sorted(deep["constant/polyMesh"]) == ["boundary", "points"]
+    assert deep["system"] == ["controlDict"]
+
+
 def test_remove_numeric_folders_keeps_zero(tmp_path):
     for name in ("0", "0.5", "1", "constant"):
         (tmp_path / name).mkdir()

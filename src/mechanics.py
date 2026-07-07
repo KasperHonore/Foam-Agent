@@ -121,20 +121,29 @@ def remove_numeric_folders(case_dir: str) -> None:
                 pass
 
 
-def scan_case_directory(case_dir: str) -> Dict[str, List[str]]:
-    """Scan a case directory one level deep: {folder: [files]}."""
+def scan_case_directory(case_dir: str, deep: bool = False) -> Dict[str, List[str]]:
+    """Scan a case directory: {folder: [files]}.
+
+    One level deep by default — callers like read_case_files load every listed
+    file into LLM context, and recursing would pull in constant/polyMesh mesh
+    data. deep=True recurses, with relative paths ("constant/polyMesh") as keys.
+    """
     if not os.path.exists(case_dir):
         raise FileNotFoundError(f"Case directory does not exist: {case_dir}")
 
     dir_structure = {}
     base_depth = case_dir.rstrip(os.sep).count(os.sep)
     for root, dirs, files in os.walk(case_dir):
+        dirs[:] = [d for d in dirs if not d.startswith('.')]
+        if root == case_dir:
+            continue
         current_depth = root.rstrip(os.sep).count(os.sep)
-        if current_depth == base_depth + 1:
-            folder_name = os.path.relpath(root, case_dir)
-            regular_files = [f for f in files if not f.startswith('.') and os.path.isfile(os.path.join(root, f))]
-            if regular_files:
-                dir_structure[folder_name] = regular_files
+        if not deep and current_depth != base_depth + 1:
+            continue
+        folder_name = os.path.relpath(root, case_dir).replace(os.sep, "/")
+        regular_files = [f for f in files if not f.startswith('.')]
+        if regular_files:
+            dir_structure[folder_name] = regular_files
     return dir_structure
 
 
