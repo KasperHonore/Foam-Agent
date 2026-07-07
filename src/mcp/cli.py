@@ -5,8 +5,9 @@ Usage (after pip install):
     foamagent-mcp --transport http    # HTTP mode (for web clients)
     foamagent-mcp --help
 
-Integration with AI tools:
-    claude mcp add foamagent -- foamagent-mcp
+Integration with AI tools: project-scoped MCP configs are committed in the
+repo (.mcp.json, .cursor/mcp.json, opencode.json, .codex/config.toml),
+pointing at the HTTP endpoint. See src/mcp/README.md.
 """
 
 from __future__ import annotations

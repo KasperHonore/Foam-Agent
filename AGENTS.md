@@ -33,10 +33,13 @@ python foambench_main.py --output ./output --prompt_path ./user_requirement.txt
 # Run with custom mesh
 python foambench_main.py --output ./output --prompt_path ./user_requirement.txt --custom_mesh_path ./mesh.msh
 
-# Run tests
-pytest tests/ -v
+# Run tests (key-free unit tests + agent-asset drift check)
+pytest tests/test_mechanics_unit.py -v
 
-# Start MCP server
+# End-to-end test (needs the MCP server running with OpenFOAM)
+python tests/test_lid_driven_cavity_mcp.py
+
+# Start MCP server (key-free)
 python -m src.mcp.fastmcp_server --transport http --host 0.0.0.0 --port 7860
 ```
 
