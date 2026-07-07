@@ -18,7 +18,7 @@ No. The first `search_tutorials`/`find_similar_case` call downloads a ~1.2 GB em
 
 ### Where do my simulations end up?
 
-Each case gets its own directory under `runs/`, with all generated files and `log.*` output. `runs/` is gitignored, so `git pull` never touches it.
+Each case gets its own directory under `runs/`, with all generated files and `log.*` output. `runs/` is bind-mounted from your clone into the container, so results are directly visible on your machine and survive container recreation. It is gitignored, so `git pull` never touches it either.
 
 ### How do I update, and will it break my work?
 
@@ -27,6 +27,7 @@ git pull
 docker pull ghcr.io/kasperhonore/foamagent:latest
 docker tag ghcr.io/kasperhonore/foamagent:latest foamagent:latest
 docker rm -f foamagent-mcp && docker run -d --name foamagent-mcp --restart unless-stopped -p 7860:7860 \
+  -v "$(pwd)/runs:/home/openfoam/Foam-Agent/runs" \
   foamagent:latest python -m src.mcp.fastmcp_server --transport http --host 0.0.0.0 --port 7860
 ```
 
@@ -46,7 +47,7 @@ No. Embeddings run fine on CPU, and OpenFOAM is CPU-based. For big cases there's
 
 ### How much disk space does it take?
 
-The Docker image is ~29 GB (OpenFOAM + conda env + baked-in FAISS indices). Add ~1.2 GB for the embedding model downloaded on first use, plus whatever your simulations produce.
+The Docker image is ~10 GB — mostly the OpenFOAM + ParaView base, plus a CPU-only Python environment and the baked-in FAISS indices. Add ~1.2 GB for the embedding model downloaded on first use, plus whatever your simulations produce.
 
 ### Can I run it without Docker?
 

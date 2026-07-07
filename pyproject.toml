@@ -32,6 +32,8 @@ dependencies = [
     "faiss-cpu>=1.7",
     "uvicorn>=0.30",
     "pyvista>=0.44",
+    # vtk 9.3.x was validated against the numpy 1.x line; keep until vtk is bumped
+    "numpy>=1.26,<2",
 ]
 
 [project.optional-dependencies]
@@ -52,7 +54,15 @@ pipeline = [
 hpc = ["boto3"]
 ollama = ["langchain-ollama>=0.3", "ollama>=0.4"]
 bedrock = ["langchain-aws>=0.2", "boto3"]
-all = ["foamagent[pipeline,hpc,ollama,bedrock]"]
+# In-container toolbox for run_python_script (GMSH meshing, plotting, data wrangling).
+tools = [
+    "gmsh>=4.13",
+    "matplotlib>=3.8",
+    "pandas>=2.0",
+    "scipy>=1.10",
+    "imageio>=2.30",
+]
+all = ["foamagent[pipeline,hpc,ollama,bedrock,tools]"]
 
 [project.scripts]
 foamagent-mcp = "src.mcp.cli:main"

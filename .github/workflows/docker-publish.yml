@@ -1,7 +1,7 @@
 name: Publish Docker image
 
 # Builds docker/Dockerfile and pushes it to GHCR so users can `docker pull`
-# instead of spending 30-45 minutes building the ~29 GB image locally.
+# instead of building the image locally.
 #
 # Tags produced:
 #   ghcr.io/<owner>/foamagent:latest    — every push to main that touches the image
@@ -15,7 +15,6 @@ on:
       - docker/**
       - src/**
       - database/**
-      - environment.yml
       - pyproject.toml
       - .github/workflows/docker-publish.yml
   release:
@@ -31,8 +30,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
-      # The final image is ~29 GB uncompressed; stock runners don't have the
-      # headroom for the build layers, so reclaim ~30 GB of preinstalled tooling.
+      # The image is ~10 GB uncompressed (mostly the OpenFOAM+ParaView base);
+      # reclaim preinstalled tooling so build layers always have headroom.
       - name: Free disk space
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
@@ -72,3 +71,5 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

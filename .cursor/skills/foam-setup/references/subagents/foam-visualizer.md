@@ -26,8 +26,9 @@ server's filesystem, and PyVista is installed there:
 
 ## Script rules
 
-- Headless rendering: `pv.OFF_SCREEN = True` at the top; on Linux servers call
-  `pv.start_xvfb()` inside a try/except (not available/needed everywhere).
+- Headless rendering: `pv.OFF_SCREEN = True` at the top and
+  `pv.Plotter(off_screen=True)` — that is all; do NOT call `pv.start_xvfb()`
+  (removed in pyvista >= 0.45; offscreen rendering works without it).
 - Load via `pv.OpenFOAMReader(foam_file)`; set the last available time step
   (`reader.set_active_time_value(reader.time_values[-1])`).
 - Color by the requested field with the `coolwarm` colormap and show a scalar

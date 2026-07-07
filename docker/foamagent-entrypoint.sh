@@ -14,11 +14,9 @@ if [ -z "$WM_PROJECT_DIR" ] || ! command -v blockMesh >/dev/null 2>&1; then
     exit 1
 fi
 
-# Initialize conda
-source "$CONDA_DIR/etc/profile.d/conda.sh"
-
-# Activate FoamAgent environment
-conda activate FoamAgent
+# Python venv (installed by the Dockerfile) — just ensure it leads PATH
+export VIRTUAL_ENV="${VIRTUAL_ENV:-/opt/venv}"
+export PATH="$VIRTUAL_ENV/bin:$PATH"
 
 # Change to Foam-Agent directory
 cd "$FoamAgent_PATH"
@@ -73,13 +71,14 @@ if [ "${FOAMAGENT_SKIP_UPDATE:-1}" != "1" ]; then
             echo "[entrypoint] WARNING: Could not checkout $FOAMAGENT_VERSION" >&2
     fi
 
-    # If environment.yml changed, update conda env (best-effort)
+    # If pyproject.toml changed, update the venv (best-effort)
     if [ -d "$FoamAgent_PATH/.git" ]; then
-        # Compare bundled environment snapshot with current
-        if ! git diff --quiet HEAD@{1} -- environment.yml 2>/dev/null; then
-            echo "[entrypoint] environment.yml changed — updating conda env (this may take a while) ..."
-            conda env update --file environment.yml --prune 2>&1 | tail -5 || \
-                echo "[entrypoint] WARNING: conda env update failed. Some new dependencies may be missing." >&2
+        # Compare bundled dependency snapshot with current
+        if ! git diff --quiet HEAD@{1} -- pyproject.toml 2>/dev/null; then
+            echo "[entrypoint] pyproject.toml changed — updating Python deps ..."
+            uv pip install -r pyproject.toml \
+                --extra pipeline --extra hpc --extra ollama --extra tools 2>&1 | tail -5 || \
+                echo "[entrypoint] WARNING: dependency update failed. Some new dependencies may be missing." >&2
         fi
     fi
 else
@@ -93,26 +92,16 @@ echo "=========================================="
 echo "Foam-Agent Docker Container Ready!"
 echo "=========================================="
 echo "OpenFOAM: $WM_PROJECT_DIR"
-echo "Conda Env: FoamAgent (activated)"
+echo "Python: $(python --version 2>/dev/null || echo 'unknown') ($VIRTUAL_ENV)"
 echo "Working Dir: $FoamAgent_PATH"
 if [ -d "$FoamAgent_PATH/.git" ]; then
     echo "Git:        $(git log --oneline -1 2>/dev/null || echo 'unknown')"
 fi
 echo ""
-echo "To run Foam-Agent:"
-echo "  python foambench_main.py --output ./output --prompt_path ./examples/user_requirement.txt"
+echo "To run the key-free MCP server:"
+echo "  python -m src.mcp.fastmcp_server --transport http --host 0.0.0.0 --port 7860"
 echo ""
 echo "Environment variables:"
-if [ -n "$OPENAI_API_KEY" ]; then
-    echo "  OPENAI_API_KEY:         (set)"
-else
-    echo "  OPENAI_API_KEY:         (not set)"
-fi
-if [ -n "$ANTHROPIC_API_KEY" ]; then
-    echo "  ANTHROPIC_API_KEY:      (set)"
-else
-    echo "  ANTHROPIC_API_KEY:      (not set)"
-fi
 echo "  FOAMAGENT_SKIP_UPDATE:  ${FOAMAGENT_SKIP_UPDATE:-1}"
 echo "  FOAMAGENT_VERSION:      ${FOAMAGENT_VERSION:-(latest)}"
 echo "=========================================="

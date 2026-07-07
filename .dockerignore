@@ -6,6 +6,19 @@ output/
 logs/
 .venv/
 
+# Host-side assets — used by the AI CLI on the host, never inside the container
+examples/
+tests/
+agents/
+.claude/
+.codex/
+.cursor/
+.opencode/
+.pi/
+.github/
+.pytest_cache/
+docs/
+
 # Exclude Python cache files
 __pycache__/
 *.py[cod]
@@ -34,4 +47,3 @@ __pycache__/
 # Uncomment if you want to exclude pre-built database files
 # database/faiss/
 # database/raw/
-

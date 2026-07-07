@@ -61,8 +61,8 @@ Get-ChildItem database/faiss -Recurse -Filter *.faiss | Select-Object Length, Fu
 git lfs pull   # if they are pointers
 ```
 
-Then build — **warn the user this takes 30–45+ minutes and ~29 GB on first
-build** (OpenFOAM base image + conda env). Run it in the background:
+Then build — **warn the user this takes ~10 minutes and ~10 GB on first
+build** (mostly the OpenFOAM base image). Run it in the background:
 
 ```powershell
 docker build -f docker/Dockerfile -t foamagent:latest .
@@ -79,11 +79,14 @@ docker ps -a --filter name=foamagent-mcp --format "{{.Names}} {{.Status}}"
 
 ```powershell
 docker run -d --name foamagent-mcp --restart unless-stopped -p 7860:7860 `
+  -v "${PWD}/runs:/home/openfoam/Foam-Agent/runs" `
   foamagent:latest python -m src.mcp.fastmcp_server --transport http --host 0.0.0.0 --port 7860
 ```
 
-(The image does not pip-install the package, so use `python -m
-src.mcp.fastmcp_server`, not `foamagent-mcp`.)
+(Run from the repo root — the `-v` mount keeps simulation results in the
+clone's `runs/` so they survive container recreation. The image does not
+pip-install the package, so use `python -m src.mcp.fastmcp_server`, not
+`foamagent-mcp`.)
 
 Wait ~15 s, then confirm startup:
 

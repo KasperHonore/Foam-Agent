@@ -30,8 +30,10 @@ PULL_CMDS = (
     "docker pull ghcr.io/kasperhonore/foamagent:latest\n"
     "  docker tag ghcr.io/kasperhonore/foamagent:latest foamagent:latest"
 )
+RUNS_MOUNT_DST = "/home/openfoam/Foam-Agent/runs"
 RUN_CMD = (
     "docker run -d --name foamagent-mcp --restart unless-stopped -p 7860:7860 \\\n"
+    f'    -v "{REPO / "runs"}:{RUNS_MOUNT_DST}" \\\n'
     "    foamagent:latest python -m src.mcp.fastmcp_server --transport http --host 0.0.0.0 --port 7860"
 )
 
@@ -105,6 +107,20 @@ def check_container(docker: str) -> Check:
     return Check("foamagent-mcp container", True, status)
 
 
+def check_runs_mount(docker: str) -> Check:
+    """Without the runs/ bind mount, results are lost on container recreation."""
+    code, out = _run([docker, "inspect", "foamagent-mcp",
+                      "--format", "{{range .Mounts}}{{.Destination}};{{end}}"])
+    if code != 0:
+        return Check("runs/ mount", False, "could not inspect container mounts", warn=True)
+    if RUNS_MOUNT_DST not in out.split(";"):
+        return Check("runs/ mount", False,
+                     "container has no runs/ bind mount — simulation results will be "
+                     "lost when the container is recreated",
+                     f"docker rm -f foamagent-mcp && {RUN_CMD}", warn=True)
+    return Check("runs/ mount", True, f"{RUNS_MOUNT_DST} bind-mounted from the clone")
+
+
 def check_endpoint() -> Check:
     """Any HTTP response from the MCP endpoint means the server is listening."""
     req = urllib.request.Request(MCP_URL, method="GET")
@@ -133,7 +149,10 @@ def main() -> int:
         image = check_image(docker)
         checks.append(image)
         if image.ok:
-            checks.append(check_container(docker))
+            container = check_container(docker)
+            checks.append(container)
+            if container.ok:
+                checks.append(check_runs_mount(docker))
     checks.append(check_endpoint())
 
     healthy = checks[-1].ok

@@ -2,7 +2,8 @@
 CLAUDE.md
 .claude/settings.local.json
 .claude/memory/
-runs/
+runs/*
+!runs/.gitkeep
 output/
 benchmark/
 

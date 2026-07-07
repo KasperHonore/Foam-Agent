@@ -198,12 +198,6 @@ try:
 except Exception:
     pass
 
-try:
-    pv.start_xvfb()
-except Exception:
-    # start_xvfb is optional and may be unavailable
-    pass
-
 foam_path = os.path.abspath({foam_file!r})
 out_png = os.path.abspath({output_png!r})
 

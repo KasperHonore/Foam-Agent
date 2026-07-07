@@ -1,117 +1,64 @@
-# --- Stage 1: Builder ---
-FROM openfoam/openfoam10-paraview510:latest AS builder
-USER root
-
-# Install base utilities (including ca-certificates for SSL)
-RUN apt-get update \
-    && apt-get install -y \
-        build-essential \
-        wget \
-        python3 \
-        python3-pip \
-        libboost-all-dev \
-        ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-# Download and install Miniconda directly
-ENV CONDA_DIR=/opt/conda
-ENV PATH=$CONDA_DIR/bin:$PATH
-RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/Miniconda3-latest-Linux-x86_64.sh \
-    && bash /tmp/Miniconda3-latest-Linux-x86_64.sh -b -p "$CONDA_DIR" \
-    && rm -f /tmp/Miniconda3-latest-Linux-x86_64.sh \
-    && ln -s "$CONDA_DIR/bin/conda" /usr/bin/conda \
-    && conda --version
-
-# Copy Foam-Agent from local directory (build context)
-ENV FoamAgent_PATH="/home/openfoam/Foam-Agent"
-WORKDIR /home/openfoam
-
-# Switch to bash to source OpenFOAM environment
-SHELL ["/bin/bash", "-c"]
-
-# Create the conda environment FIRST so this expensive layer is only
-# invalidated when environment.yml changes, not on every code edit.
-COPY environment.yml /tmp/environment.yml
-RUN conda config --add channels conda-forge && \
-    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main && \
-    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r && \
-    conda env create --file /tmp/environment.yml --yes
-
-# Copy the entire project directory (excluding .dockerignore patterns)
-# Note: Build context must be the project root directory
-COPY . Foam-Agent
-WORKDIR $FoamAgent_PATH
-
-# Initialize conda for bash (automatic setup)
-RUN conda init bash && \
-    echo "conda activate FoamAgent" >> ~/.bashrc
-
-RUN conda clean --all --yes && \
-    rm -rf "$CONDA_DIR/pkgs" && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
-# --- Stage 2: Runtime ---
+# syntax=docker/dockerfile:1.7
+# foamagent-mcp image: Foundation OpenFOAM v10 base + a slim, CPU-only Python
+# environment for the key-free MCP server.
+#
+# Dependencies come from pyproject.toml (single manifest — no separate
+# environment file). torch is installed CPU-only first so sentence-transformers
+# never drags in the multi-GB CUDA wheel stack; the container does local
+# embeddings on CPU and nothing else needs a GPU.
+#
+# Build (context must be the repo root, FAISS indices pulled via git-lfs):
+#   docker build -f docker/Dockerfile -t foamagent:latest .
 FROM openfoam/openfoam10-paraview510:latest
 USER root
+SHELL ["/bin/bash", "-c"]
 
-# Install runtime dependencies
-
+# Runtime OS deps: git/git-lfs for the optional in-container self-update,
+# xvfb for headless PyVista rendering.
 RUN apt-get update \
-    && apt-get install -y \
-        libboost-all-dev \
+    && apt-get install -y --no-install-recommends \
         ca-certificates \
         git \
         git-lfs \
         xvfb \
     && git lfs install \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Environment variables in a FoamAgent container
-ENV CONDA_DIR="/opt/conda"
-ENV PATH=$CONDA_DIR/bin:$PATH
-ENV FoamAgent_PATH="/home/openfoam/Foam-Agent"
+# uv supplies both a standalone CPython 3.12 (the Ubuntu base only has 3.8)
+# and fast dependency installs. Pin the uv tag when cutting a release.
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
+ENV UV_PYTHON_INSTALL_DIR=/opt/python \
+    VIRTUAL_ENV=/opt/venv \
+    PATH=/opt/venv/bin:$PATH
 
-# Copy Conda runtime and Foam-Agent from builder
-COPY --from=builder --chown=root:root $CONDA_DIR $CONDA_DIR
-COPY --from=builder --chown=root:root $FoamAgent_PATH $FoamAgent_PATH
-COPY --from=builder --chown=root:root /root/.bashrc /root/.bashrc
+# Dependency layer: keyed on pyproject.toml only, so code edits never
+# re-install packages. The cache mount keeps downloaded wheels across builds.
+# `all`/`bedrock` extras are skipped: `all` is self-referential (breaks
+# deps-only resolution) and `bedrock` is a subset of pipeline+hpc.
+COPY pyproject.toml /tmp/deps/pyproject.toml
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv venv --python 3.12 "$VIRTUAL_ENV" \
+    && uv pip install "torch==2.5.1+cpu" \
+        --extra-index-url https://download.pytorch.org/whl/cpu \
+    && uv pip install -r /tmp/deps/pyproject.toml \
+        --extra pipeline --extra hpc --extra ollama --extra tools
 
-# Ensure conda is properly initialized in .bashrc for interactive shells
-RUN echo '' >> /root/.bashrc && \
-    echo '# Auto-activate FoamAgent environment' >> /root/.bashrc && \
-    echo 'if [ -f "$CONDA_DIR/etc/profile.d/conda.sh" ]; then' >> /root/.bashrc && \
-    echo '    source "$CONDA_DIR/etc/profile.d/conda.sh"' >> /root/.bashrc && \
-    echo '    conda activate FoamAgent 2>/dev/null || true' >> /root/.bashrc && \
-    echo 'fi' >> /root/.bashrc && \
-    echo '' >> /root/.bashrc && \
-    echo '# Auto-source OpenFOAM' >> /root/.bashrc && \
-    echo 'if [ -f /opt/openfoam10/etc/bashrc ]; then' >> /root/.bashrc && \
-    echo '    source /opt/openfoam10/etc/bashrc' >> /root/.bashrc && \
-    echo 'fi' >> /root/.bashrc && \
-    echo '' >> /root/.bashrc && \
-    echo '# Auto-change to Foam-Agent directory' >> /root/.bashrc && \
-    echo 'cd "$FoamAgent_PATH" 2>/dev/null || true' >> /root/.bashrc
+# Project code + baked-in FAISS database (see .dockerignore for exclusions)
+ENV FoamAgent_PATH=/home/openfoam/Foam-Agent
+COPY . $FoamAgent_PATH
 
-# Copy entrypoint script from docker directory
-# Note: Build context should be the project root directory
-# Build command: docker build -f docker/Dockerfile .
+# Interactive shells: OpenFOAM env + venv on PATH + land in the project
+RUN echo '' >> /root/.bashrc \
+    && echo '# Foam-Agent shell setup' >> /root/.bashrc \
+    && echo 'source /opt/openfoam10/etc/bashrc 2>/dev/null || true' >> /root/.bashrc \
+    && echo 'export PATH="/opt/venv/bin:$PATH"' >> /root/.bashrc \
+    && echo 'cd "$FoamAgent_PATH" 2>/dev/null || true' >> /root/.bashrc
+
 COPY docker/foamagent-entrypoint.sh /usr/local/bin/foamagent-entrypoint.sh
 RUN chmod +x /usr/local/bin/foamagent-entrypoint.sh
 
-# ============================================================================
-# Uncomment to exclude root access but create a larger image
-# ============================================================================
-# # Ensure openfoam user owns entire home directory
-# RUN chown -R openfoam:openfoam /home/openfoam
-
-# # Switch to non-root user
-# USER openfoam
-# ============================================================================
-
-# Set default working directory
 WORKDIR /home/openfoam/
 
-# Use the custom entrypoint script
 ENTRYPOINT ["/usr/local/bin/foamagent-entrypoint.sh"]
 CMD ["/bin/bash"]

@@ -28,10 +28,11 @@ foamagent-mcp  (the hands — no API key)
 docker pull ghcr.io/kasperhonore/foamagent:latest
 docker tag ghcr.io/kasperhonore/foamagent:latest foamagent:latest
 
-# or build from source (30-45 min, ~29 GB; needs `git lfs pull` first)
+# or build from source (~10 min, ~10 GB; needs `git lfs pull` first)
 docker build -f docker/Dockerfile -t foamagent:latest .
 
-docker run -it -p 7860:7860 foamagent:latest foamagent-mcp --transport http
+docker run -it -p 7860:7860 -v "$(pwd)/runs:/home/openfoam/Foam-Agent/runs" \
+  foamagent:latest foamagent-mcp --transport http
 ```
 
 The MCP registration is **committed in this repo** and points at `http://localhost:7860/mcp`:

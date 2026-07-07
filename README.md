@@ -54,6 +54,7 @@ cd Foam-Agent
 docker pull ghcr.io/kasperhonore/foamagent:latest
 docker tag ghcr.io/kasperhonore/foamagent:latest foamagent:latest
 docker run -d --name foamagent-mcp --restart unless-stopped -p 7860:7860 \
+  -v "$(pwd)/runs:/home/openfoam/Foam-Agent/runs" \
   foamagent:latest python -m src.mcp.fastmcp_server --transport http --host 0.0.0.0 --port 7860
 ```
 
@@ -82,7 +83,7 @@ Prefer to verify things yourself first? `python scripts/doctor.py` runs the same
 
 ```bash
 git lfs pull                                              # FAISS indices ship via LFS
-docker build -f docker/Dockerfile -t foamagent:latest .   # first build: 30-45 min, ~29 GB
+docker build -f docker/Dockerfile -t foamagent:latest .   # first build: ~10 min, ~10 GB
 ```
 
 </details>
@@ -128,10 +129,11 @@ git pull                                          # skills, subagents, MCP confi
 docker pull ghcr.io/kasperhonore/foamagent:latest # the server image (then recreate the container)
 docker tag ghcr.io/kasperhonore/foamagent:latest foamagent:latest
 docker rm -f foamagent-mcp && docker run -d --name foamagent-mcp --restart unless-stopped -p 7860:7860 \
+  -v "$(pwd)/runs:/home/openfoam/Foam-Agent/runs" \
   foamagent:latest python -m src.mcp.fastmcp_server --transport http --host 0.0.0.0 --port 7860
 ```
 
-**The contract:** `git pull` never touches your simulations (`runs/`, `output/`), your prompts and meshes at the repo root (`user_requirement.txt`, `user_req_*.txt`, `*.msh`), or your local agent settings (`CLAUDE.md`, `.claude/settings.local.json`, `.claude/memory/`) — they are all gitignored. Skills and their matching server version update together in lockstep.
+**The contract:** `git pull` never touches your simulations (`runs/`, `output/`), your prompts and meshes at the repo root (`user_requirement.txt`, `user_req_*.txt`, `*.msh`), or your local agent settings (`CLAUDE.md`, `.claude/settings.local.json`, `.claude/memory/`) — they are all gitignored. `runs/` is bind-mounted into the container, so simulation results live in your clone and survive container recreation too. Skills and their matching server version update together in lockstep.
 
 ## Project structure
 

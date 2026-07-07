@@ -249,10 +249,6 @@ runApplication icoFoam
 PYVISTA_SCRIPT = """import pyvista as pv
 
 pv.OFF_SCREEN = True
-try:
-    pv.start_xvfb()
-except Exception:
-    pass
 
 reader = pv.OpenFOAMReader("{foam_file}")
 reader.set_active_time_value(reader.time_values[-1])

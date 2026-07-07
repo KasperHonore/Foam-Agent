@@ -27,9 +27,9 @@ If the user seems new here — says "get me set up", "onboard me", "what is this
 ## Build and Run
 
 ```bash
-# Environment setup
-conda env create -n FoamAgent -f environment.yml
-conda activate FoamAgent
+# Environment setup (bare-metal; the Docker image installs the same manifest with uv)
+uv venv --python 3.12 && source .venv/bin/activate
+uv pip install -e ".[all]"
 
 # Run a simulation (sample prompts live in examples/; user copies at the repo
 # root are gitignored, so edit those rather than the examples)
@@ -48,7 +48,7 @@ python tests/test_lid_driven_cavity_mcp.py
 python -m src.mcp.fastmcp_server --transport http --host 0.0.0.0 --port 7860
 ```
 
-Requires **Foundation OpenFOAM v10** ([openfoam.org](https://openfoam.org)) at runtime (`$WM_PROJECT_DIR` must be set). ESI OpenFOAM (openfoam.com) is not compatible. Python 3.12.9 via Conda.
+Requires **Foundation OpenFOAM v10** ([openfoam.org](https://openfoam.org)) at runtime (`$WM_PROJECT_DIR` must be set). ESI OpenFOAM (openfoam.com) is not compatible. Python 3.12; all dependencies live in `pyproject.toml` (the Docker image installs them CPU-only with uv).
 
 ## Architecture
 
