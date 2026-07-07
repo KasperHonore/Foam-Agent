@@ -27,7 +27,8 @@ def parse_args():
         type=str,
         required=False,
         default=os.path.join(base_dir, "user_requirement.txt"),
-        help="User requirement file path for the benchmark (default: <dir_of_foambench_main.py>/user_requirement.txt)"
+        help="User requirement file path for the benchmark (default: <dir_of_foambench_main.py>/user_requirement.txt — "
+             "gitignored; copy a starting point from examples/, or point at examples/ directly)"
     )
     parser.add_argument(
         '--custom_mesh_path',

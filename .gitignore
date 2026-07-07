@@ -6,6 +6,12 @@ runs/
 output/
 benchmark/
 
+# User inputs at the repo root are yours — `git pull` never touches them.
+# Copy a starting point from examples/ (e.g. cp examples/user_requirement.txt .)
+/user_requirement.txt
+/user_req_*.txt
+/*.msh
+
 # Local ESI translation dev artifacts (extracted v10 cases, not for PR)
 *_v10_ready/
 tests/fixtures/v10/

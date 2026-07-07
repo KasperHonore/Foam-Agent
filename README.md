@@ -25,13 +25,23 @@ The intelligence comes from the AI subscription you already pay for. The contain
 ```bash
 git clone https://github.com/KasperHonore/Foam-Agent.git
 cd Foam-Agent
-git lfs pull                                              # FAISS indices ship via LFS
 
-# Build and start the server (first build: 30-45 min, ~29 GB)
-docker build -f docker/Dockerfile -t foamagent:latest .
+# Pull the prebuilt server image and start it (FAISS indices are baked in)
+docker pull ghcr.io/kasperhonore/foamagent:latest
+docker tag ghcr.io/kasperhonore/foamagent:latest foamagent:latest
 docker run -d --name foamagent-mcp --restart unless-stopped -p 7860:7860 \
   foamagent:latest python -m src.mcp.fastmcp_server --transport http --host 0.0.0.0 --port 7860
 ```
+
+<details>
+<summary>Build the image from source instead</summary>
+
+```bash
+git lfs pull                                              # FAISS indices ship via LFS
+docker build -f docker/Dockerfile -t foamagent:latest .   # first build: 30-45 min, ~29 GB
+```
+
+</details>
 
 Then open the repo in your agent tool. **MCP registration is already committed** — `.mcp.json` (Claude Code), `.cursor/mcp.json`, `opencode.json`, `.codex/config.toml` all point at `http://localhost:7860/mcp`. Ask naturally, or in Claude Code:
 
@@ -40,6 +50,20 @@ Then open the repo in your agent tool. **MCP registration is already committed**
 ```
 
 Something not responding? The `/foam-setup` skill (or [agents/skills/foam-setup/SKILL.md](agents/skills/foam-setup/SKILL.md)) diagnoses Docker/image/container/LFS issues step by step.
+
+## Updating
+
+The clone is your workspace, and updates are designed to never touch your work:
+
+```bash
+git pull                                          # skills, subagents, MCP configs, server code
+docker pull ghcr.io/kasperhonore/foamagent:latest # the server image (then recreate the container)
+docker tag ghcr.io/kasperhonore/foamagent:latest foamagent:latest
+docker rm -f foamagent-mcp && docker run -d --name foamagent-mcp --restart unless-stopped -p 7860:7860 \
+  foamagent:latest python -m src.mcp.fastmcp_server --transport http --host 0.0.0.0 --port 7860
+```
+
+**The contract:** `git pull` never touches your simulations (`runs/`, `output/`), your prompts and meshes at the repo root (`user_requirement.txt`, `user_req_*.txt`, `*.msh`), or your local agent settings (`CLAUDE.md`, `.claude/settings.local.json`, `.claude/memory/`) — they are all gitignored. Skills and their matching server version update together in lockstep.
 
 ## Skills and subagents
 
@@ -92,9 +116,11 @@ The original LangGraph pipeline — where Foam-Agent makes its own LLM calls —
 pip install -e .[pipeline]
 export FOAMAGENT_MODEL_PROVIDER=anthropic ANTHROPIC_API_KEY=sk-ant-...
 export FOAMAGENT_MODEL_VERSION=claude-opus-4-6
-python foambench_main.py --output ./output --prompt_path ./user_requirement.txt
-# custom mesh: add --custom_mesh_path ./tandem_wing.msh
+python foambench_main.py --output ./output --prompt_path ./examples/user_requirement.txt
+# custom mesh: add --custom_mesh_path ./examples/tandem_wing.msh
 ```
+
+Sample prompts and meshes live in [`examples/`](examples). To write your own, copy one to the repo root and edit it there — root-level `user_requirement.txt`, `user_req_*.txt` and `*.msh` are gitignored, so updates never touch them.
 
 `FOAMAGENT_MODEL_PROVIDER` supports `openai`, `openai-codex` (ChatGPT/Codex OAuth via `~/.codex/auth.json`), `anthropic`, `bedrock`, `ollama`. Upstream's [FoamBench](https://arxiv.org/abs/2509.20374) evaluation of this pipeline reached 100% on 110 tasks with Claude Opus 4.6 at 25 correction loops.
 

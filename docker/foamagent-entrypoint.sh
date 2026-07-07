@@ -100,7 +100,7 @@ if [ -d "$FoamAgent_PATH/.git" ]; then
 fi
 echo ""
 echo "To run Foam-Agent:"
-echo "  python foambench_main.py --output ./output --prompt_path ./user_requirement.txt"
+echo "  python foambench_main.py --output ./output --prompt_path ./examples/user_requirement.txt"
 echo ""
 echo "Environment variables:"
 if [ -n "$OPENAI_API_KEY" ]; then

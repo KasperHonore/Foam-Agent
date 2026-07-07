@@ -24,7 +24,13 @@ foamagent-mcp  (the hands — no API key)
 ### Docker (recommended — includes OpenFOAM v10)
 
 ```bash
+# Prebuilt image from GHCR (published by .github/workflows/docker-publish.yml)
+docker pull ghcr.io/kasperhonore/foamagent:latest
+docker tag ghcr.io/kasperhonore/foamagent:latest foamagent:latest
+
+# or build from source (30-45 min, ~29 GB; needs `git lfs pull` first)
 docker build -f docker/Dockerfile -t foamagent:latest .
+
 docker run -it -p 7860:7860 foamagent:latest foamagent-mcp --transport http
 ```
 

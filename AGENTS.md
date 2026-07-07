@@ -27,11 +27,12 @@ Foam-Agent automates CFD (Computational Fluid Dynamics) simulations in **Foundat
 conda env create -n FoamAgent -f environment.yml
 conda activate FoamAgent
 
-# Run a simulation
-python foambench_main.py --output ./output --prompt_path ./user_requirement.txt
+# Run a simulation (sample prompts live in examples/; user copies at the repo
+# root are gitignored, so edit those rather than the examples)
+python foambench_main.py --output ./output --prompt_path ./examples/user_requirement.txt
 
 # Run with custom mesh
-python foambench_main.py --output ./output --prompt_path ./user_requirement.txt --custom_mesh_path ./mesh.msh
+python foambench_main.py --output ./output --prompt_path ./examples/user_req_tandem_wing.txt --custom_mesh_path ./examples/tandem_wing.msh
 
 # Run tests (key-free unit tests + agent-asset drift check)
 pytest tests/test_mechanics_unit.py -v

@@ -38,8 +38,18 @@ Do not try to install Docker yourself.
 docker images foamagent --format "{{.Repository}}:{{.Tag}} {{.Size}}"
 ```
 
-If missing, FIRST verify git-lfs content is real (fresh clones often have
-pointer files instead of the FAISS indices):
+If missing, prefer pulling the prebuilt image from GHCR (minutes, no LFS
+needed — the FAISS indices are baked in) and tagging it with the local name
+the rest of this skill uses:
+
+```powershell
+docker pull ghcr.io/kasperhonore/foamagent:latest
+docker tag ghcr.io/kasperhonore/foamagent:latest foamagent:latest
+```
+
+Only if the pull fails (offline, GHCR unavailable) build from source. FIRST
+verify git-lfs content is real (fresh clones often have pointer files
+instead of the FAISS indices):
 
 ```powershell
 # index.faiss files must be MB-sized; ~130-byte files are LFS pointers
