@@ -52,7 +52,9 @@ Requires **Foundation OpenFOAM v10** ([openfoam.org](https://openfoam.org)) at r
 
 ## Architecture
 
-### Workflow Pipeline (LangGraph StateGraph)
+### Legacy pipeline workflow (LangGraph StateGraph)
+
+The sections below describe the **legacy self-contained pipeline** (`foambench_main.py`). The MCP server does not run this pipeline — it exposes only the mechanical layer (`src/mechanics.py`) as tools; the calling agent harness does the reasoning.
 
 Defined in `src/main.py`:
 
@@ -71,7 +73,7 @@ src/
   main.py              # LangGraph workflow definition and entry point
   config.py            # Config dataclass with env var overrides
   utils.py             # GraphState (TypedDict), LLMService (unified LLM interface)
-  models.py            # Pydantic models for generated files and plans
+  models.py            # I/O models for the legacy pipeline's run services
   router_func.py       # LLM-based routing decisions
   logger.py            # Structured XML-tagged logging
   nodes/               # LangGraph node functions (thin wrappers calling services)
@@ -90,7 +92,7 @@ src/
     run_hpc.py         # HPC job submission
     review.py          # Error diagnosis and fix planning
     visualization.py   # PyVista-based post-processing
-  mcp/                 # FastMCP server exposing workflow as tools
+  mcp/                 # key-free FastMCP server (mechanical tools; see src/mcp/README.md)
 database/
   faiss/               # Pre-built FAISS vector indices (do NOT regenerate unless necessary)
   raw/                 # Raw OpenFOAM tutorial data
@@ -103,7 +105,7 @@ docker/                # Dockerfile for containerized deployment
 - **`GraphState`** (`src/utils.py`): TypedDict threaded through all workflow nodes. Contains user requirement, case metadata, generated files, error logs, loop count.
 - **`LLMService`** (`src/utils.py`): Unified LLM interface supporting OpenAI, Anthropic, Bedrock, Ollama. Provides `invoke()` and `structure_output()` (Pydantic-validated).
 - **`Config`** (`src/config.py`): Global config dataclass. Every field can be overridden via `FOAMAGENT_*` env vars.
-- **Pydantic models** (`src/models.py`): `FoamPydantic`/`FoamfilePydantic` for generated files, `RewritePlan` for error fixes, `CaseSummaryModel` for case metadata.
+- **Pydantic models**: `FoamPydantic`/`FoamfilePydantic` (`src/utils.py`) for generated files, `RewritePlan` (`src/services/review.py`) for error fixes, `CaseSummaryModel` (`src/services/plan.py`) for case metadata.
 
 ### Design Patterns
 
