@@ -80,7 +80,7 @@ Switch the config files above to stdio (`"command": "foamagent-mcp"`) if you pre
 | `FOAMAGENT_EMBEDDING_MODEL` | Embedding model | `Qwen/Qwen3-Embedding-0.6B` |
 | `WM_PROJECT_DIR` | OpenFOAM v10 installation (required for execution tools) | — |
 
-`FOAMAGENT_MODEL_*` variables and API keys are only needed by the optional legacy LangGraph pipeline (`pip install -e .[pipeline]`, `foambench_main.py`), not by this server.
+No `FOAMAGENT_MODEL_*` variables, no API keys — the server makes no LLM calls at all.
 
 ## Troubleshooting
 

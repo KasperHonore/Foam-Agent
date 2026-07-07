@@ -77,7 +77,7 @@ if [ "${FOAMAGENT_SKIP_UPDATE:-1}" != "1" ]; then
         if ! git diff --quiet HEAD@{1} -- pyproject.toml 2>/dev/null; then
             echo "[entrypoint] pyproject.toml changed — updating Python deps ..."
             uv pip install -r pyproject.toml \
-                --extra pipeline --extra hpc --extra ollama --extra tools 2>&1 | tail -5 || \
+                --extra ollama --extra tools 2>&1 | tail -5 || \
                 echo "[entrypoint] WARNING: dependency update failed. Some new dependencies may be missing." >&2
         fi
     fi

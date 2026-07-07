@@ -144,7 +144,7 @@ Foam-Agent/
 │   └── subagents/        #   foam-debugger, foam-mesher, foam-visualizer
 ├── .claude/ .cursor/ .codex/ .opencode/ .pi/   # generated per-CLI copies + MCP configs
 ├── src/mcp/              # the FastMCP server (the "hands")
-├── src/                  # legacy LangGraph pipeline (needs an LLM key)
+├── src/                  # mechanics.py (mechanical layer) + ESI translation
 ├── database/faiss/       # pre-built tutorial indices (git-lfs)
 ├── docker/               # server image
 ├── examples/             # sample prompts + meshes (copy to root to use)
@@ -197,21 +197,13 @@ See [src/mcp/README.md](src/mcp/README.md) for details and local (non-Docker) in
 
 No LLM API keys are needed for the server or the skills.
 
-## Legacy pipeline (self-contained, needs an LLM key)
-
-The original LangGraph pipeline — where Foam-Agent makes its own LLM calls — is retained for harness-less batch runs and benchmarking:
-
-```bash
-pip install -e .[pipeline]
-export FOAMAGENT_MODEL_PROVIDER=anthropic ANTHROPIC_API_KEY=sk-ant-...
-export FOAMAGENT_MODEL_VERSION=claude-opus-4-6
-python foambench_main.py --output ./output --prompt_path ./examples/user_requirement.txt
-# custom mesh: add --custom_mesh_path ./examples/tandem_wing.msh
-```
+## Sample prompts and meshes
 
 Sample prompts and meshes live in [`examples/`](examples). To write your own, copy one to the repo root and edit it there — root-level `user_requirement.txt`, `user_req_*.txt` and `*.msh` are gitignored, so updates never touch them.
 
-`FOAMAGENT_MODEL_PROVIDER` supports `openai`, `openai-codex` (ChatGPT/Codex OAuth via `~/.codex/auth.json`), `anthropic`, `bedrock`, `ollama`. Upstream's [FoamBench](https://arxiv.org/abs/2509.20374) evaluation of this pipeline reached 100% on 110 tasks with Claude Opus 4.6 at 25 correction loops.
+## Benchmarking against the original pipeline
+
+The original self-contained LangGraph pipeline (`foambench_main.py`, made its own LLM calls, needed API keys) has been removed from `main` — this fork is key-free end to end. It is preserved at the [`legacy-pipeline`](../../tree/legacy-pipeline) git tag for a future harness-vs-harness-less comparison; check out the tag and follow its README to run it. Upstream's [FoamBench](https://arxiv.org/abs/2509.20374) evaluation of that pipeline reached 100% on 110 tasks with Claude Opus 4.6 at 25 correction loops.
 
 ## Development
 

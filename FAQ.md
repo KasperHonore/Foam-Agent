@@ -6,7 +6,7 @@ Docker and an AI coding CLI you already use (Claude Code, Cursor, Codex, OpenCod
 
 ### Do I need an API key?
 
-No. The MCP server is key-free: retrieval runs on local embeddings, execution is plain OpenFOAM. The only thing that needs an API key is the [legacy LangGraph pipeline](README.md#legacy-pipeline-self-contained-needs-an-llm-key), which makes its own LLM calls for harness-less batch runs.
+No. Nothing on `main` needs an API key: retrieval runs on local embeddings, execution is plain OpenFOAM, and all CFD reasoning is done by the AI coding tool you already pay for. (The original keyed LangGraph pipeline was removed; it survives at the `legacy-pipeline` git tag for benchmarking.)
 
 ### Which OpenFOAM version does it target?
 

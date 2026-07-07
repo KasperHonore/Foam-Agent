@@ -34,15 +34,15 @@ ENV UV_PYTHON_INSTALL_DIR=/opt/python \
 
 # Dependency layer: keyed on pyproject.toml only, so code edits never
 # re-install packages. The cache mount keeps downloaded wheels across builds.
-# `all`/`bedrock` extras are skipped: `all` is self-referential (breaks
-# deps-only resolution) and `bedrock` is a subset of pipeline+hpc.
+# The `all` extra is skipped: it is self-referential (breaks deps-only
+# resolution) — list the concrete extras instead.
 COPY pyproject.toml /tmp/deps/pyproject.toml
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv venv --python 3.12 "$VIRTUAL_ENV" \
     && uv pip install "torch==2.5.1+cpu" \
         --extra-index-url https://download.pytorch.org/whl/cpu \
     && uv pip install -r /tmp/deps/pyproject.toml \
-        --extra pipeline --extra hpc --extra ollama --extra tools
+        --extra ollama --extra tools
 
 # Project code + baked-in FAISS database (see .dockerignore for exclusions)
 ENV FoamAgent_PATH=/home/openfoam/Foam-Agent

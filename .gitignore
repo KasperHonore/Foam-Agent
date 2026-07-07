@@ -7,7 +7,7 @@ runs/*
 output/
 benchmark/
 
-# User inputs at the repo root are yours — `git pull` never touches them.
+# User inputs at the repo root are yours ??? `git pull` never touches them.
 # Copy a starting point from examples/ (e.g. cp examples/user_requirement.txt .)
 /user_requirement.txt
 /user_req_*.txt
@@ -17,7 +17,6 @@ benchmark/
 *_v10_ready/
 tests/fixtures/v10/
 .venv/
-database/foamgpt/data
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

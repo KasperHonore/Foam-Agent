@@ -37,23 +37,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# The legacy LangGraph pipeline (foambench_main.py) does its own LLM calls.
-pipeline = [
-    "langchain>=0.3",
-    "langchain-core>=0.3",
-    "langchain-openai>=0.2",
-    "langchain-anthropic>=0.2",
-    "langchain-aws>=0.2",
-    "langgraph>=0.2",
-    "openai>=1.0",
-    "anthropic>=0.20",
-    "tiktoken>=0.7",
-    "boto3",
-    "requests",
-]
-hpc = ["boto3"]
 ollama = ["langchain-ollama>=0.3", "ollama>=0.4"]
-bedrock = ["langchain-aws>=0.2", "boto3"]
 # In-container toolbox for run_python_script (GMSH meshing, plotting, data wrangling).
 tools = [
     "gmsh>=4.13",
@@ -62,7 +46,7 @@ tools = [
     "scipy>=1.10",
     "imageio>=2.30",
 ]
-all = ["foamagent[pipeline,hpc,ollama,bedrock,tools]"]
+all = ["foamagent[ollama,tools]"]
 
 [project.scripts]
 foamagent-mcp = "src.mcp.cli:main"
