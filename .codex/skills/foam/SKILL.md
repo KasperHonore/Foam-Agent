@@ -78,7 +78,10 @@ each file with `write_case_file`, **in dependency order**: `system/` first,
 then `constant/`, then `0/`. Follow
 [references/file-generation.md](references/file-generation.md) strictly — it
 contains the consistency rules (cross-file coherence, dimensions, fvSolution
-`*Final` entries, controlDict constraints).
+`*Final` entries, controlDict constraints). For free-surface/VOF cases
+(interFoam family) additionally follow
+[references/multiphase-vof.md](references/multiphase-vof.md) — the file
+inventory and numerics differ substantially from single-phase.
 
 Use the `tutorial_reference` from `find_similar_case` as your template where it
 matches; if it is a weak match, rely on your own OpenFOAM knowledge and use
@@ -97,12 +100,16 @@ unsure about a utility's usage. Write it with
 1. `run_case(case_dir)` — executes Allrun and returns extracted errors.
    WARNING: every `run_case` call first deletes old logs and time-step
    folders — reruns always start from scratch; there is no warm restart.
-2. `status: success` means the commands exited cleanly — for STEADY solvers
-   (simpleFoam etc.) it does NOT mean converged. After a "successful" steady
-   run, read the solver log tail (`read_case_file(case_dir, "log.<solver>")`)
-   and confirm convergence (e.g. `SIMPLE solution converged`) or acceptably
-   low final residuals. Plateaued residuals = not converged: see the error
-   playbook.
+2. `status: success` means the commands exited cleanly — it does NOT mean
+   the physics is right. Always read the solver log tail
+   (`read_case_file(case_dir, "log.<solver>")`) after a "successful" run:
+   - STEADY solvers: confirm convergence (`SIMPLE solution converged`) or
+     acceptably low final residuals. Plateaued residuals = not converged:
+     see the error playbook.
+   - TRANSIENT solvers: confirm the final `Time =` reached `endTime`, time
+     directories were written (`list_case_files`), continuity errors stayed
+     small, and — for VOF — phase fraction is conserved and alpha stays
+     bounded (see references/multiphase-vof.md).
 3. On failure, enter the fix loop: delegate to the **foam-debugger** subagent
    (no subagents? read
    [references/subagents/foam-debugger.md](references/subagents/foam-debugger.md)

@@ -30,8 +30,8 @@ placeholder text.
 ## fvSolution: `*Final` entries (transient PISO/PIMPLE solvers)
 
 For transient pressure-velocity coupling solvers (PISO/PIMPLE), the `solvers`
-dictionary MUST include matching `Final` entries for every field solved on the
-final corrector:
+dictionary MUST include matching `Final` entries for every field the solver
+actually solves on the final corrector:
 
 ```
 p     { solver PCG; preconditioner DIC; tolerance 1e-06; relTol 0.05; }
@@ -40,13 +40,21 @@ U     { solver smoothSolver; smoother symGaussSeidel; tolerance 1e-05; relTol 0;
 UFinal { $U; relTol 0; }
 ```
 
+- Match the ACTUAL pressure field name: gravity/buoyancy/multiphase solvers
+  (interFoam, buoyantFoam, ...) solve `p_rgh`, not `p` — they need
+  `p_rgh` + `p_rghFinal` entries (and typically a `pcorr` entry for the flux
+  correction in moving/initialized-field cases).
+- A `UFinal` entry is only needed if the momentum equation is solved; with
+  `momentumPredictor no;` (common in interFoam) there is no U solve, though a
+  redundant `UFinal` is harmless.
 - For grouped regex entries use a grouped Final entry:
   `"(U|k|epsilon)Final" { $U; relTol 0; }`.
 - Never emit placeholder text such as `$<field>;` — `$p;` and `$U;` are real
   OpenFOAM macro references to the entries above.
 - The `PIMPLE`/`PISO` sub-dictionary must match the selected solver
-  (`nCorrectors`, `nNonOrthogonalCorrectors`; `pRefCell 0; pRefValue 0;` for
-  incompressible closed-domain cases).
+  (`nCorrectors`, `nNonOrthogonalCorrectors`, `nOuterCorrectors`,
+  `momentumPredictor`; `pRefCell 0; pRefValue 0;` for incompressible
+  closed-domain cases).
 
 ## fvSolution/fvSchemes: steady solvers (SIMPLE)
 

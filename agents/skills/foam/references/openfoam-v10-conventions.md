@@ -15,6 +15,8 @@ do NOT mix the two.
 | Viscosity keyword | `viscosityModel` | `transportModel` |
 | Buoyant solver | `buoyantFoam` | `buoyantPimpleFoam` |
 | Compressible thermo | `hePsiThermo` valid | often `heRhoThermo` |
+| VOF phase properties | `constant/phaseProperties` + `constant/physicalProperties.<phase>` | `constant/transportProperties` with phase sub-dicts |
+| VOF interface compression | `div(phi,alpha) Gauss interfaceCompression vanLeer 1;` in fvSchemes | `cAlpha` entry in fvSolution |
 
 Notes:
 

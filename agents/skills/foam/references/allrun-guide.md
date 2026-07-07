@@ -28,8 +28,11 @@ parallel execution.
 ## Command selection rules
 
 - Include ONLY the commands the case needs, in order: mesh generation
-  (`blockMesh` or `snappyHexMesh`), optional `decomposePar`, the solver,
-  optional `reconstructPar`.
+  (`blockMesh` or `snappyHexMesh`), field initialization if the case needs it
+  (`setFields` driven by `system/setFieldsDict` — e.g. the water column in
+  VOF/interFoam cases; `mapFields`), optional `decomposePar`, the solver,
+  optional `reconstructPar`. Omitting a needed `setFields` is a SILENT
+  failure: the run "succeeds" with uniform initial fields and wrong physics.
 - The `allrun_reference` from `find_similar_case` shows scripts of similar
   cases — they may use a different solver or structure; trust the user
   requirement and your case's actual file list over the reference.
