@@ -25,19 +25,22 @@ RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -
 # Copy Foam-Agent from local directory (build context)
 ENV FoamAgent_PATH="/home/openfoam/Foam-Agent"
 WORKDIR /home/openfoam
-# Copy the entire project directory (excluding .dockerignore patterns)
-# Note: Build context must be the project root directory
-COPY . Foam-Agent
 
 # Switch to bash to source OpenFOAM environment
 SHELL ["/bin/bash", "-c"]
 
-# Create the Foam-Agent environment
-WORKDIR $FoamAgent_PATH
+# Create the conda environment FIRST so this expensive layer is only
+# invalidated when environment.yml changes, not on every code edit.
+COPY environment.yml /tmp/environment.yml
 RUN conda config --add channels conda-forge && \
     conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main && \
     conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r && \
-    conda env create --file environment.yml --yes
+    conda env create --file /tmp/environment.yml --yes
+
+# Copy the entire project directory (excluding .dockerignore patterns)
+# Note: Build context must be the project root directory
+COPY . Foam-Agent
+WORKDIR $FoamAgent_PATH
 
 # Initialize conda for bash (automatic setup)
 RUN conda init bash && \
@@ -60,6 +63,7 @@ RUN apt-get update \
         ca-certificates \
         git \
         git-lfs \
+        xvfb \
     && git lfs install \
     && rm -rf /var/lib/apt/lists/*
 

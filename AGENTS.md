@@ -1,12 +1,23 @@
 # AGENTS.md
 
-> This file helps AI agents (Codex, Cursor, Claude Code, Copilot, etc.) understand and work with this codebase.
+> This file helps AI agents (Codex, Cursor, Claude Code, OpenCode, pi, Copilot, etc.) understand and work with this codebase.
 
 ## What is Foam-Agent?
 
-Foam-Agent is a multi-agent framework that automates CFD (Computational Fluid Dynamics) simulations in **Foundation OpenFOAM v10** ([openfoam.org](https://openfoam.org)) from natural language prompts. It uses LangChain/LangGraph for orchestration, FAISS for RAG-based tutorial retrieval, and supports multiple LLM providers (OpenAI, Anthropic, Bedrock, Ollama).
+Foam-Agent automates CFD (Computational Fluid Dynamics) simulations in **Foundation OpenFOAM v10** ([openfoam.org](https://openfoam.org)) from natural language prompts. The architecture is "brain out, hands in":
 
-> **Important:** All generated case files, dictionary names, and solver binaries follow Foundation OpenFOAM v10 conventions. ESI OpenFOAM (openfoam.com, e.g., v2312, v2406, v2512) is **not compatible**.
+- **The `foamagent` MCP server** (this repo) is the *hands*: key-free mechanical tools — FAISS tutorial retrieval (local embeddings), case file I/O, OpenFOAM execution, error extraction, PyVista/GMSH script execution, SLURM. No LLM provider needed.
+- **Skills and subagents under `agents/`** are the *brain-guidance*: they run on YOUR agent harness's model (Claude Code, Cursor, Codex, OpenCode, pi, ...) and orchestrate the MCP tools.
+- A legacy self-contained LangGraph pipeline (`foambench_main.py`, `pip install -e .[pipeline]`) still exists for harness-less batch runs; only it needs `FOAMAGENT_MODEL_*` API keys.
+
+> **Important:** All generated case files, dictionary names, and solver binaries follow Foundation OpenFOAM v10 conventions. ESI OpenFOAM (openfoam.com, e.g., v2312, v2406, v2512) is supported only via best-effort translation (`translate_case_to_esi`).
+
+## Skills, subagents, and MCP registration
+
+- **Canonical sources (edit these):** `agents/skills/<name>/SKILL.md` (+ `references/`) and `agents/subagents/<name>.md`.
+- **Generated copies (do NOT edit):** `.claude/skills`, `.claude/agents`, `.opencode/skill`, `.opencode/agent`, `.codex/skills`, `.pi/skills`, `.cursor/skills`, `.cursor/rules/foamagent-skills.mdc`. Regenerate with `python scripts/sync_agent_assets.py` (CI runs `--check`).
+- **MCP registration is committed per tool:** `.mcp.json` (Claude Code), `.cursor/mcp.json`, `opencode.json`, `.codex/config.toml` — all pointing at `http://localhost:7860/mcp` (start it with Docker, see `src/mcp/README.md`).
+- **Universal fallback:** if your tool auto-discovers none of the above, read `agents/skills/foam/SKILL.md` when the user asks for a CFD simulation and follow it; subagent roles are in `agents/subagents/` — follow them inline.
 
 ## Build and Run
 
@@ -96,15 +107,14 @@ docker/                # Dockerfile for containerized deployment
 
 ## Environment Variables
 
-| Variable | Purpose |
-|----------|---------|
-| `FOAMAGENT_MODEL_PROVIDER` | LLM provider: `openai`, `openai-codex`, `anthropic`, `bedrock`, `ollama` |
-| `FOAMAGENT_MODEL_VERSION` | Model identifier (e.g., `claude-opus-4-6`, `gpt-5.3-codex`) |
-| `FOAMAGENT_EMBEDDING_PROVIDER` | Embedding backend: `openai`, `huggingface`, `ollama` |
-| `FOAMAGENT_EMBEDDING_MODEL` | Embedding model (default: `Qwen/Qwen3-Embedding-0.6B`) |
-| `OPENAI_API_KEY` | Required for `openai` provider |
-| `ANTHROPIC_API_KEY` | Required for `anthropic` provider |
-| `WM_PROJECT_DIR` | OpenFOAM installation path (required at runtime) |
+| Variable | Purpose | Needed by |
+|----------|---------|-----------|
+| `WM_PROJECT_DIR` | OpenFOAM installation path (required to execute simulations) | MCP server + pipeline |
+| `FOAMAGENT_EMBEDDING_PROVIDER` | Embedding backend: `huggingface` (default, local/key-free), `openai`, `ollama` | MCP server + pipeline |
+| `FOAMAGENT_EMBEDDING_MODEL` | Embedding model (default: `Qwen/Qwen3-Embedding-0.6B`) | MCP server + pipeline |
+| `FOAMAGENT_MODEL_PROVIDER` | LLM provider: `openai`, `openai-codex`, `anthropic`, `bedrock`, `ollama` | legacy pipeline only |
+| `FOAMAGENT_MODEL_VERSION` | Model identifier (e.g., `claude-opus-4-6`, `gpt-5.3-codex`) | legacy pipeline only |
+| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | LLM API keys | legacy pipeline only |
 
 ## Common Tasks
 

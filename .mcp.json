@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "foamagent": {
+      "type": "http",
+      "url": "http://localhost:7860/mcp"
+    }
+  }
+}

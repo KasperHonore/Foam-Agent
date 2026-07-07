@@ -1,0 +1,46 @@
+# Writing the Allrun script
+
+The Allrun script automates the whole run. It executes inside the sourced
+OpenFOAM v10 environment via the `run_case` tool (which also cleans old logs
+and time folders first, and extracts errors from `log.*` files afterwards).
+
+## Structure
+
+Use the tutorial pattern — each command logged to its own `log.<command>`
+file, aborting on first failure:
+
+```bash
+#!/bin/sh
+cd ${0%/*} || exit 1    # Run from this directory
+
+# Source tutorial run functions
+. $WM_PROJECT_DIR/bin/tools/RunFunctions
+
+runApplication blockMesh
+runApplication $(getApplication)
+```
+
+`runApplication <cmd>` writes `log.<cmd>` and stops on error — this is what
+the error extraction relies on, so prefer it over raw commands. Use
+`runParallel` + `decomposePar`/`reconstructPar` only when the user asked for
+parallel execution.
+
+## Command selection rules
+
+- Include ONLY the commands the case needs, in order: mesh generation
+  (`blockMesh` or `snappyHexMesh`), optional `decomposePar`, the solver,
+  optional `reconstructPar`.
+- The `allrun_reference` from `find_similar_case` shows scripts of similar
+  cases — they may use a different solver or structure; trust the user
+  requirement and your case's actual file list over the reference.
+- **Never include post-processing commands** (postProcess, foamToVTK,
+  sampling) — visualization is a separate step.
+- **Never include mesh conversion commands** (`gmshToFoam` etc.) — conversion
+  is done before Allrun via `run_openfoam_command`, and the converted
+  `constant/polyMesh` is already in place.
+- **Never include gmsh itself** — mesh generation scripts run separately.
+- For a converted custom mesh: do NOT run blockMesh (it would overwrite
+  `constant/polyMesh`); the script starts directly with the solver.
+- Unsure about a utility's flags? `search_tutorials(index="openfoam_command_help", query="<command>")`.
+
+Write the script with `write_case_file(case_dir, "Allrun", content, executable=true)`.

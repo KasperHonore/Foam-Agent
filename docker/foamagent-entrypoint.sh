@@ -24,13 +24,14 @@ conda activate FoamAgent
 cd "$FoamAgent_PATH"
 
 # ---------------------------------------------------------------------------
-# Auto-update Foam-Agent code from GitHub
-# Skip with: docker run -e FOAMAGENT_SKIP_UPDATE=1 ...
+# Optional: update Foam-Agent code from GitHub (DISABLED by default — this is
+# a diverged fork; pulling upstream would clobber local changes).
+# Enable with: docker run -e FOAMAGENT_SKIP_UPDATE=0 ...
 # Pin a version: docker run -e FOAMAGENT_VERSION=v2.0.0 ...
 # ---------------------------------------------------------------------------
 FOAMAGENT_REPO="https://github.com/csml-rpi/Foam-Agent.git"
 
-if [ "${FOAMAGENT_SKIP_UPDATE:-0}" != "1" ]; then
+if [ "${FOAMAGENT_SKIP_UPDATE:-1}" != "1" ]; then
     echo "[entrypoint] Updating Foam-Agent from GitHub ..."
 
     # First-time: the image ships code via COPY but without .git.
@@ -112,7 +113,7 @@ if [ -n "$ANTHROPIC_API_KEY" ]; then
 else
     echo "  ANTHROPIC_API_KEY:      (not set)"
 fi
-echo "  FOAMAGENT_SKIP_UPDATE:  ${FOAMAGENT_SKIP_UPDATE:-0}"
+echo "  FOAMAGENT_SKIP_UPDATE:  ${FOAMAGENT_SKIP_UPDATE:-1}"
 echo "  FOAMAGENT_VERSION:      ${FOAMAGENT_VERSION:-(latest)}"
 echo "=========================================="
 

@@ -1,0 +1,13 @@
+# Codex configuration for Foam-Agent.
+# If your Codex version does not read project-level .codex/config.toml,
+# copy the [mcp_servers.foamagent] block into ~/.codex/config.toml.
+
+# Default: HTTP transport to the foamagent server (e.g. running in Docker):
+#   docker run -p 7860:7860 foamagent:latest foamagent-mcp --transport http
+[mcp_servers.foamagent]
+url = "http://localhost:7860/mcp"
+
+# Alternative (local install with OpenFOAM v10 available): stdio transport.
+# Comment the block above and uncomment this one.
+# [mcp_servers.foamagent]
+# command = "foamagent-mcp"

@@ -1,0 +1,71 @@
+# Generating OpenFOAM case files
+
+Generate files **in dependency order** — `system/` first, then `constant/`,
+then `0/` — so each file can be checked against the ones already written.
+Write every file with the `write_case_file` MCP tool. File content must be
+pure OpenFOAM dictionary format: no markdown fences, no explanations, no
+placeholder text.
+
+## Cross-file consistency (check before writing each file)
+
+- Every property defined in one file and used in another must match: if `nu`
+  is defined in `constant/physicalProperties`, the fields in `0/` must be
+  consistent with it (e.g. velocity chosen to hit the requested Reynolds
+  number).
+- Field names must match across files: every field solved by the solver needs
+  a `0/<field>` file, a solver entry in `system/fvSolution`, and divergence /
+  gradient schemes in `system/fvSchemes` for every term the solver uses.
+- Boundary patch names in every `0/<field>` file must exactly match the
+  patches defined by the mesh (`blockMeshDict` patches, or
+  `constant/polyMesh/boundary` after mesh conversion — check with
+  `read_mesh_boundaries`).
+- Patch *types* must be compatible: a patch declared `empty` in the mesh must
+  be `empty` in every field file; `wall` patches take wall conditions, etc.
+- Units and dimensions must be correct on every field (`dimensions [...]`).
+- Solver settings must be consistent with the user requirement (turbulence
+  model, transient vs steady, compressible vs incompressible).
+
+## fvSolution: `*Final` entries (transient PISO/PIMPLE solvers)
+
+For transient pressure-velocity coupling solvers (PISO/PIMPLE), the `solvers`
+dictionary MUST include matching `Final` entries for every field solved on the
+final corrector:
+
+```
+p     { solver PCG; preconditioner DIC; tolerance 1e-06; relTol 0.05; }
+pFinal { $p; relTol 0; }
+U     { solver smoothSolver; smoother symGaussSeidel; tolerance 1e-05; relTol 0; }
+UFinal { $U; relTol 0; }
+```
+
+- For grouped regex entries use a grouped Final entry:
+  `"(U|k|epsilon)Final" { $U; relTol 0; }`.
+- Never emit placeholder text such as `$<field>;` — `$p;` and `$U;` are real
+  OpenFOAM macro references to the entries above.
+- The `PIMPLE`/`PISO` sub-dictionary must match the selected solver
+  (`nCorrectors`, `nNonOrthogonalCorrectors`; `pRefCell 0; pRefValue 0;` for
+  incompressible closed-domain cases).
+
+## controlDict
+
+- Include ONLY what is needed to run: `application`, time controls
+  (`startTime`, `endTime`, `deltaT`), write controls.
+- Do NOT include post-processing function objects.
+- `application` must be the chosen solver binary name.
+
+## Using the similar-case reference
+
+`find_similar_case` returns the closest v10 tutorial. Judge the match level
+yourself:
+
+- **Strong match** (same solver + same physics): follow its structure and
+  numerical settings closely; adapt geometry/BCs/values to the requirement.
+- **Weak match** (same domain only): use it for file inventory and dictionary
+  skeletons, not for physics settings. Do not copy blindly.
+- **No match** (`found: false`): rely on your own OpenFOAM knowledge; query
+  `search_tutorials(index="openfoam_tutorials_details", query="<solver> <keywords>")`
+  for specific file examples.
+
+Whatever the source, apply your domain expertise: verify all numerical values
+are consistent with the user requirement — never contradict values the user
+specified.

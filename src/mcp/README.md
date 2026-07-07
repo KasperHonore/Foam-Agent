@@ -1,142 +1,82 @@
-# Foam-Agent MCP Server
+# Foam-Agent MCP Server (key-free)
 
-Expose OpenFOAM CFD simulation as tools for any AI coding assistant via [MCP (Model Context Protocol)](https://modelcontextprotocol.io/).
+Exposes the **mechanical** side of OpenFOAM CFD simulation as [MCP](https://modelcontextprotocol.io/) tools: tutorial retrieval (RAG over Foundation OpenFOAM v10 tutorials), case file I/O, simulation execution, error extraction, Python script execution (GMSH meshing, PyVista visualization) and SLURM job management.
 
-> **OpenFOAM version:** This server targets **Foundation OpenFOAM v10** ([openfoam.org](https://openfoam.org)) by default. If `FOAMAGENT_OPENFOAM_FORK=esi` is set, generated input files are translated to ESI OpenFOAM ([openfoam.com](https://openfoam.com), e.g., v2312, v2406, v2512) naming and dictionary conventions on a best-effort basis. The run/review/fix workflow is still primarily validated with Foundation OpenFOAM v10.
-
-## Quick Start
-
-### 1. Install
-
-```bash
-# Clone and install
-git clone https://github.com/csml-rpi/Foam-Agent.git
-cd Foam-Agent
-pip install -e .
-```
-
-Or with conda (full environment including PyTorch, FAISS, etc.):
-
-```bash
-conda env create -f environment.yml
-conda activate FoamAgent
-pip install -e .
-```
-
-### 2. Register with your AI tool (one command)
-
-**Claude Code:**
-```bash
-claude mcp add foamagent -- foamagent-mcp
-```
-
-**Cursor:**
-Add to `.cursor/mcp.json`:
-```json
-{
-  "mcpServers": {
-    "foamagent": {
-      "command": "foamagent-mcp"
-    }
-  }
-}
-```
-
-**Windsurf / Other MCP-compatible tools:**
-```json
-{
-  "mcpServers": {
-    "foamagent": {
-      "command": "foamagent-mcp"
-    }
-  }
-}
-```
-
-**HTTP mode** (for web clients or remote access):
-```bash
-foamagent-mcp --transport http --host 0.0.0.0 --port 7860
-```
-
-### 3. Configure LLM provider (optional)
-
-Set environment variables to choose your LLM backend:
-
-```bash
-export FOAMAGENT_MODEL_PROVIDER=anthropic          # openai, anthropic, bedrock, ollama
-export FOAMAGENT_MODEL_VERSION=claude-sonnet-4-6   # model identifier
-export ANTHROPIC_API_KEY=sk-ant-...                # API key for your provider
-```
-
-## Available MCP Tools
-
-Foam-Agent generates output following **Foundation OpenFOAM v10** conventions by default. If
-`FOAMAGENT_OPENFOAM_FORK=esi` is set, generated input files are translated to ESI OpenFOAM
-conventions on a best-effort basis before they are returned.
-
-| Tool | Description |
-|------|-------------|
-| `plan` | Analyze user requirements and plan simulation structure (solver, domain, subtasks) using Foundation v10 references |
-| `input_writer` | Generate OpenFOAM configuration files; optionally translate generated files when `FOAMAGENT_OPENFOAM_FORK=esi` |
-| `run` | Execute Allrun script locally with error collection; primarily validated with Foundation OpenFOAM v10 |
-| `review` | Analyze simulation errors and suggest fixes via LLM using Foundation v10 references |
-| `apply_fixes` | Rewrite OpenFOAM files based on review analysis; ESI cases remain best-effort |
-| `visualization` | Generate PyVista visualization of simulation results |
-
-## Typical Workflow
-
-Once registered, ask your AI assistant naturally:
-
-> "Simulate lid-driven cavity flow at Re=1000"
-
-The assistant will call the tools in sequence:
-1. **plan** - Parse requirements, select solver, generate subtasks
-2. **input_writer** - Generate all OpenFOAM files
-3. **run** - Execute the simulation
-4. **review + apply_fixes** - Fix errors if any (automatic retry loop)
-5. **visualization** - Render results
-
-## Prerequisites
-
-- **Python 3.10+** with dependencies installed
-- **Foundation OpenFOAM v10** ([openfoam.org](https://openfoam.org)) installed and available in PATH for the default, fully validated runtime path. ESI OpenFOAM (`openfoam.com`) generation is available as best-effort translation with `FOAMAGENT_OPENFOAM_FORK=esi`, but execution and repair loops should be verified per case.
-- An LLM API key (OpenAI, Anthropic, or local via Ollama)
-
-## Architecture
+**No LLM provider, no API key.** All CFD *reasoning* — planning the case, writing OpenFOAM dictionaries, diagnosing errors — is done by the AI agent that calls these tools, guided by the portable skills/subagents in [`agents/`](../../agents) at the repo root. Whatever agent harness you already use (Claude Code, Cursor, Codex, OpenCode, pi, ...) supplies the intelligence; this server supplies the hands.
 
 ```
-AI Tool (Claude Code / Cursor / ...)
-    ↓ MCP protocol (stdio or HTTP)
-foamagent-mcp (this server)
-    ↓
-Service Layer (src/services/*.py)
-    ↓
-OpenFOAM + LLM Services
+Your agent harness  (the brain — its model does the CFD reasoning)
+    │  guided by agents/skills/foam + agents/subagents/*
+    │  MCP protocol (stdio or HTTP)
+    ▼
+foamagent-mcp  (the hands — no API key)
+    ├─ FAISS tutorial retrieval (local embeddings)
+    ├─ case file read/write
+    ├─ OpenFOAM execution + error extraction
+    ├─ Python script execution (GMSH / PyVista)
+    └─ SLURM submission
 ```
 
-## Advanced Configuration
+> **OpenFOAM version:** Foundation OpenFOAM v10 (openfoam.org). The `translate_case_to_esi` tool converts a generated case to ESI (openfoam.com) conventions on a best-effort basis.
 
-| Environment Variable | Purpose | Default |
-|---------------------|---------|---------|
-| `FOAMAGENT_MODEL_PROVIDER` | LLM backend | `openai-codex` |
-| `FOAMAGENT_MODEL_VERSION` | Model identifier | `gpt-5.3-codex` |
-| `FOAMAGENT_EMBEDDING_PROVIDER` | Embedding backend | `huggingface` |
-| `FOAMAGENT_EMBEDDING_MODEL` | Embedding model | `Qwen/Qwen3-Embedding-0.6B` |
-| `FOAMAGENT_OPENFOAM_FORK` | OpenFOAM target fork for generated files: `foundation` or `esi` | `foundation` |
-| `OPENAI_API_KEY` | OpenAI API key | — |
-| `ANTHROPIC_API_KEY` | Anthropic API key | — |
+## Quick start
 
-## Troubleshooting
+### Docker (recommended — includes OpenFOAM v10)
 
-**Import errors:** Ensure you ran `pip install -e .` from the repo root.
-
-**Database errors:** The FAISS indices ship pre-built in `database/faiss/`. If missing, rebuild with:
-```bash
-python init_database.py --openfoam_path $WM_PROJECT_DIR --force
-```
-
-**OpenFOAM not found:** The default validated runtime path requires Foundation OpenFOAM v10 ([openfoam.org](https://openfoam.org)). If using ESI OpenFOAM, set `FOAMAGENT_OPENFOAM_FORK=esi` and verify the generated case against your local ESI installation. Install Foundation v10 or use the Docker image:
 ```bash
 docker build -f docker/Dockerfile -t foamagent:latest .
 docker run -it -p 7860:7860 foamagent:latest foamagent-mcp --transport http
 ```
+
+The MCP registration is **committed in this repo** and points at `http://localhost:7860/mcp`:
+
+| Tool | Config file |
+|------|-------------|
+| Claude Code | `.mcp.json` |
+| Cursor | `.cursor/mcp.json` |
+| OpenCode | `opencode.json` |
+| Codex | `.codex/config.toml` (copy to `~/.codex/config.toml` if project config is unsupported) |
+
+Open the repo in your tool and the `foamagent` server is available — nothing else to configure.
+
+### Local install (Linux/macOS with OpenFOAM v10)
+
+```bash
+pip install -e .          # key-free core only
+foamagent-mcp             # stdio transport
+```
+
+Switch the config files above to stdio (`"command": "foamagent-mcp"`) if you prefer this mode. `WM_PROJECT_DIR` must point at your OpenFOAM v10 installation for execution tools to work; retrieval tools work without it.
+
+## Tools
+
+| Tool | What it does |
+|------|--------------|
+| `get_case_stats` | Valid case domains/categories/solvers |
+| `search_tutorials` | Semantic search over v10 tutorials, Allrun scripts, command help |
+| `find_similar_case` | Best-matching tutorial + directory structure + Allrun references |
+| `resolve_case_dir` | Where a new case should live (under `runs/`) |
+| `write_case_file` / `read_case_file` / `list_case_files` | Case file I/O on the server's filesystem |
+| `run_case` | Execute Allrun, extract errors from logs |
+| `run_openfoam_command` | One-off utilities: `checkMesh`, `gmshToFoam`, `decomposePar`, ... |
+| `run_python_script` | Server-side Python (PyVista rendering, GMSH mesh generation) |
+| `ensure_foam_file` | `.foam` marker for the PyVista OpenFOAM reader |
+| `read_mesh_boundaries` | Patch names/types from `constant/polyMesh/boundary` |
+| `translate_case_to_esi` | Rules-based Foundation→ESI translation |
+| `submit_slurm_job` / `slurm_job_status` | HPC job submission and polling |
+
+## Configuration
+
+| Environment variable | Purpose | Default |
+|---------------------|---------|---------|
+| `FOAMAGENT_EMBEDDING_PROVIDER` | Embedding backend for retrieval: `huggingface`, `openai`, `ollama` | `huggingface` (local, key-free) |
+| `FOAMAGENT_EMBEDDING_MODEL` | Embedding model | `Qwen/Qwen3-Embedding-0.6B` |
+| `WM_PROJECT_DIR` | OpenFOAM v10 installation (required for execution tools) | — |
+
+`FOAMAGENT_MODEL_*` variables and API keys are only needed by the optional legacy LangGraph pipeline (`pip install -e .[pipeline]`, `foambench_main.py`), not by this server.
+
+## Troubleshooting
+
+- **Import errors:** run `pip install -e .` from the repo root.
+- **Missing FAISS indices:** they ship pre-built in `database/faiss/`; rebuild with `python init_database.py --openfoam_path $WM_PROJECT_DIR --force` only if tutorials changed.
+- **`WM_PROJECT_DIR is not set`:** source OpenFOAM v10 before starting the server (the Docker image does this automatically).
