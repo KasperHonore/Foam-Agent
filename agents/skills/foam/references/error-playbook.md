@@ -5,6 +5,13 @@ files with `write_case_file` → `run_case` again. Up to 25 iterations. Keep a
 running history of (error, diagnosis, fix) per attempt; when the same error
 returns, try a **different** approach — do not repeat a failed fix.
 
+Two facts about `run_case` that shape the loop:
+
+- It deletes logs and time-step folders before each run — every rerun starts
+  from scratch; do not plan warm restarts from `latestTime`.
+- `status: success` only means clean exits. For steady solvers, ALWAYS verify
+  convergence in the solver log tail before declaring victory.
+
 ## Reading errors
 
 `run_case` returns `errors: [{file, error_content}]` — the log file name tells
@@ -35,6 +42,7 @@ for full context, and read the case files involved before proposing a fix.
 | `cannot find file ... 0/<field>` | Solver needs a field file you didn't generate — create it |
 | `patch ... not found` / patch count mismatch | `0/` field patch names don't match `constant/polyMesh/boundary` — use `read_mesh_boundaries` and align |
 | Floating point exception / diverging residuals | Time step too large, bad initial values, or wrong scheme; reduce `deltaT`, add relaxation, use more robust schemes (e.g. `upwind` div) |
+| Steady run "succeeds" but residuals plateau (limit cycle, `residualControl` never met) | NOT converged even though `run_case` says success. Lower `relaxationFactors` (e.g. p 0.3→0.2, U 0.7→0.5), raise `endTime` (iteration budget), rerun; confirm `SIMPLE solution converged` in the log tail |
 | `Continuity errors` blowing up | Check pressure solver + `pRefCell`/`pRefValue` (closed incompressible domains) |
 | Solver exits without `End` marker | Crash or timeout — read the log tail; often numerical instability |
 | Dimension mismatch `[...]` | Fix the `dimensions` entry or the offending value's units |

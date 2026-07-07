@@ -595,12 +595,12 @@ def run_python_script(
     filename: str = "script.py",
     expected_output: Optional[str] = None,
     timeout_s: int = 180,
-) -> Tuple[bool, str, List[str]]:
-    """Write and run a Python script in the case directory.
+) -> Tuple[bool, str, List[str], str]:
+    """Write and run a Python script with cwd = the case directory.
 
     Used for GMSH mesh generation and PyVista visualization scripts.
     If expected_output is given, success requires that file to exist and
-    be non-empty after execution. Returns (ok, artifact_path, errors).
+    be non-empty after execution. Returns (ok, artifact_path, errors, stdout).
     """
     case_dir = os.path.abspath(case_dir)
     script_path = os.path.join(case_dir, filename)
@@ -621,32 +621,30 @@ def run_python_script(
 
         if expected_abs:
             if os.path.exists(expected_abs) and os.path.getsize(expected_abs) > 0:
-                return True, expected_abs, []
+                return True, expected_abs, [], stdout
             return False, "", [
                 "Script executed but expected output was not created",
                 f"expected_output={expected_abs}",
-                f"STDOUT:\n{stdout}",
-            ]
-        return True, "", []
+            ], stdout
+        return True, "", [], stdout
 
     except subprocess.TimeoutExpired as e:
         out = e.stdout.decode() if isinstance(e.stdout, bytes) else str(e.stdout)
         err = e.stderr.decode() if isinstance(e.stderr, bytes) else str(e.stderr)
         return False, "", [
             f"Script timed out after {timeout_s}s",
-            f"STDOUT:\n{out}",
             f"STDERR:\n{err}",
-        ]
+        ], out
     except subprocess.CalledProcessError as e:
         err = e.stderr.decode() if isinstance(e.stderr, bytes) else str(e.stderr)
         out = e.stdout.decode() if isinstance(e.stdout, bytes) else str(e.stdout)
         return False, "", [
-            f"Script execution failed (exit code {e.returncode})\nSTDOUT:\n{out}\nSTDERR:\n{err}"
-        ]
+            f"Script execution failed (exit code {e.returncode})\nSTDERR:\n{err}"
+        ], out
     except FileNotFoundError:
-        return False, "", [f"Python interpreter not found: {sys.executable}"]
+        return False, "", [f"Python interpreter not found: {sys.executable}"], ""
     except Exception as e:
-        return False, "", [f"Unexpected error running script: {str(e)}"]
+        return False, "", [f"Unexpected error running script: {str(e)}"], ""
 
 
 def read_mesh_boundaries(case_dir: str) -> dict:

@@ -46,6 +46,23 @@ UFinal { $U; relTol 0; }
   (`nCorrectors`, `nNonOrthogonalCorrectors`; `pRefCell 0; pRefValue 0;` for
   incompressible closed-domain cases).
 
+## fvSolution/fvSchemes: steady solvers (SIMPLE)
+
+For steady solvers (`simpleFoam`, ...):
+
+- `relaxationFactors` are required. Typical start: fields `p 0.3;`, equations
+  `U 0.7;`. If residuals plateau in a limit cycle, lower them (p 0.2, U 0.5)
+  and raise `endTime` (the iteration budget).
+- Add `residualControl` to the `SIMPLE` sub-dictionary (e.g. `p 1e-5; U 1e-5;`)
+  so the run stops at convergence and convergence is detectable in the log
+  (`SIMPLE solution converged`).
+- Use bounded divergence schemes: `div(phi,U) bounded Gauss linearUpwind
+  grad(U);` (or `bounded Gauss upwind` for robustness).
+- Set `ddtSchemes { default steadyState; }`.
+- Solvers using `constant/momentumTransport` (v10) also need
+  `div((nuEff*dev2(T(grad(U)))))` in `divSchemes` — **even for laminar
+  cases**; omitting it gives an undefined-keyword error at startup.
+
 ## controlDict
 
 - Include ONLY what is needed to run: `application`, time controls

@@ -126,6 +126,10 @@ async def find_similar_case(
     match. Returns the selected tutorial's full content, its directory
     structure and similar Allrun scripts. YOU judge how closely to follow the
     reference (check the returned selected_case metadata against your target).
+
+    Note: case_category is a free-text retrieval hint and is NOT validated
+    against get_case_stats values — an unknown category is accepted silently
+    and only weakens the semantic match. Domain and solver matter most.
     """
     return await asyncio.to_thread(
         mechanics.find_similar_case,
@@ -289,6 +293,7 @@ class PythonScriptResponse(BaseModel):
     success: bool
     artifact: str = Field(description="Absolute path of expected_output if produced, else ''")
     errors: List[str]
+    stdout: str = Field(description="Captured stdout of the script (truncated)")
 
 
 @mcp.tool(name="run_python_script")
@@ -302,12 +307,15 @@ async def run_python_script(
 ) -> PythonScriptResponse:
     """Execute a Python script in the case directory (server-side Python).
 
-    Use for PyVista visualization (pyvista is installed; set expected_output
-    to the PNG path) and GMSH mesh generation (set expected_output to the .msh
-    file). On failure, fix the script based on the returned errors and retry.
+    The script runs with cwd = case_dir, so relative paths in the script
+    (input files like the .foam marker, and expected_output) resolve inside
+    the case. Use for PyVista visualization (pyvista is installed; set
+    expected_output to the PNG path) and GMSH mesh generation (set
+    expected_output to the .msh file). On failure, fix the script based on
+    the returned errors/stdout and retry.
     """
     case_dir = _abs_case_dir(case_dir)
-    ok, artifact, errors = await asyncio.to_thread(
+    ok, artifact, errors, stdout = await asyncio.to_thread(
         lambda: mechanics.run_python_script(
             case_dir, script,
             filename=filename,
@@ -315,7 +323,9 @@ async def run_python_script(
             timeout_s=timeout,
         )
     )
-    return PythonScriptResponse(success=ok, artifact=artifact, errors=errors)
+    if len(stdout) > 20000:
+        stdout = "... [truncated] ...\n" + stdout[-20000:]
+    return PythonScriptResponse(success=ok, artifact=artifact, errors=errors, stdout=stdout)
 
 
 @mcp.tool(name="ensure_foam_file")
@@ -323,7 +333,11 @@ async def ensure_foam_file(
     case_dir: str = Field(description="Case directory"),
     ctx: Context = None,
 ) -> str:
-    """Create/refresh the .foam marker file needed by PyVista's OpenFOAM reader. Returns its filename."""
+    """Create/refresh the .foam marker file needed by PyVista's OpenFOAM reader.
+
+    Returns the filename RELATIVE to case_dir (e.g. 'my_case.foam') — use it
+    as-is inside run_python_script scripts, which execute with cwd=case_dir.
+    """
     return mechanics.ensure_foam_file(_abs_case_dir(case_dir))
 
 

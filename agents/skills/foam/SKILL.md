@@ -29,7 +29,9 @@ lid-driven cavity flow at Re=1000").
   where the simulation executes. Same for reading: use `read_case_file`.
 - Never modify parameters the user explicitly specified (Reynolds number,
   velocities, geometry, solver choice...). Fix errors by other means.
-- Show the user your plan and get confirmation before generating files.
+- Show the user your plan and get confirmation before generating files. When
+  running headless/autonomously (no user to ask), proceed and include the
+  plan in your final report instead.
 - Report progress after each phase.
 
 ## Workflow
@@ -91,14 +93,22 @@ unsure about a utility's usage. Write it with
 ### 5. Run and debug
 
 1. `run_case(case_dir)` — executes Allrun and returns extracted errors.
-2. On failure, enter the fix loop: delegate to the **foam-debugger** subagent
+   WARNING: every `run_case` call first deletes old logs and time-step
+   folders — reruns always start from scratch; there is no warm restart.
+2. `status: success` means the commands exited cleanly — for STEADY solvers
+   (simpleFoam etc.) it does NOT mean converged. After a "successful" steady
+   run, read the solver log tail (`read_case_file(case_dir, "log.<solver>")`)
+   and confirm convergence (e.g. `SIMPLE solution converged`) or acceptably
+   low final residuals. Plateaued residuals = not converged: see the error
+   playbook.
+3. On failure, enter the fix loop: delegate to the **foam-debugger** subagent
    (no subagents? read
    [references/subagents/foam-debugger.md](references/subagents/foam-debugger.md)
    and [references/error-playbook.md](references/error-playbook.md), then do
    it inline). Iterate (diagnose → rewrite files → `run_case`) up to 25 times;
    keep a short history of attempts and try a *different* approach when an
    error repeats.
-3. Report success/failure honestly, with the failing log excerpts if any.
+4. Report success/failure honestly, with the failing log excerpts if any.
 
 ### 6. HPC execution (only if the user asks for cluster/SLURM)
 

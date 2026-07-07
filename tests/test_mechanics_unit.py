@@ -133,26 +133,28 @@ def test_read_mesh_boundaries_missing(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_run_python_script_expected_output(tmp_path):
-    ok, artifact, errors = mechanics.run_python_script(
+    ok, artifact, errors, stdout = mechanics.run_python_script(
         str(tmp_path),
-        "open('result.txt', 'w').write('hi')",
+        "print('working'); open('result.txt', 'w').write('hi')",
         filename="make.py",
         expected_output="result.txt",
         timeout_s=30,
     )
     assert ok, errors
     assert artifact.endswith("result.txt")
+    assert "working" in stdout
 
 
 def test_run_python_script_failure(tmp_path):
-    ok, artifact, errors = mechanics.run_python_script(
+    ok, artifact, errors, stdout = mechanics.run_python_script(
         str(tmp_path),
-        "raise RuntimeError('boom')",
+        "print('before crash'); raise RuntimeError('boom')",
         filename="fail.py",
         timeout_s=30,
     )
     assert not ok
     assert any("boom" in e for e in errors)
+    assert "before crash" in stdout
 
 
 # ---------------------------------------------------------------------------
