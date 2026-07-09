@@ -1,0 +1,47 @@
+name: "💡 Feature request"
+description: "Suggest a new tool, skill, solver coverage, or workflow improvement."
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ideas that come from a real case you hit are the best kind — the more concrete
+        the situation, the easier it is to design the right thing.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do, and where does Foam-Agent fall short today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you'd like
+      description: The tool, skill, solver, or behavior you're imagining. Rough is fine.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - "New MCP tool"
+        - "Agent skill / subagent (agents/)"
+        - "Solver / physics coverage"
+        - "Meshing"
+        - "Post-processing / visualization"
+        - "HPC / SLURM"
+        - "Docs / onboarding"
+        - "Packaging / Docker / CI"
+        - "Other"
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives / workarounds
+      description: Anything you already tried or considered, and why it didn't cut it.
+    validations:
+      required: false

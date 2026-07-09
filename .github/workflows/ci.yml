@@ -1,0 +1,56 @@
+name: CI
+
+# Gates every PR into main on the key-free unit suite. These tests need no
+# OpenFOAM, FAISS indices, Docker, or API keys — just Python + pytest — so CI
+# stays fast. The end-to-end MCP test (tests/test_lid_driven_cavity_mcp.py)
+# needs a live server and is run by hand, so it is excluded here.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-tests:
+    name: Unit tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install test dependencies
+        run: python -m pip install --upgrade pip pytest
+
+      - name: Run unit suite (no OpenFOAM / Docker / API keys)
+        run: pytest -v -m "not integration" --ignore=tests/test_lid_driven_cavity_mcp.py
+
+  # Single stable check to require in branch protection, so the required-check
+  # name doesn't change when the Python matrix does.
+  ci-passed:
+    name: CI passed
+    needs: unit-tests
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Verify the unit matrix succeeded
+        run: |
+          if [ "${{ needs.unit-tests.result }}" != "success" ]; then
+            echo "unit-tests did not succeed: ${{ needs.unit-tests.result }}"
+            exit 1
+          fi
+          echo "All unit-test jobs passed."

@@ -1,0 +1,100 @@
+name: "🐞 Bug report"
+description: "Something in Foam-Agent misbehaved — a tool errored, a run broke, the server wouldn't start."
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Foam-Agent is **brain-out**: your AI harness does the CFD
+        reasoning, the Docker MCP server is just the hands. Telling us *which side* misbehaved
+        — and pasting the logs so we can see it — is what makes a bug fixable on the first pass.
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before you file
+      options:
+        - label: "I checked the [FAQ](https://github.com/KasperHonore/Foam-Agent/blob/main/FAQ.md) and searched existing issues."
+          required: true
+        - label: "I'm on the latest image (`docker pull ghcr.io/kasperhonore/foamagent:latest`) or can name the tag I'm on."
+          required: false
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect to happen, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The exact sequence — prompt, tool call, or command — that triggers it.
+      placeholder: |
+        1. Started the server with `docker run ...`
+        2. Gave my agent the prompt "..."
+        3. Tool `run_case` returned ...
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part broke?
+      options:
+        - "MCP server won't start / connect"
+        - "Tutorial retrieval (find_similar_case / search_tutorials)"
+        - "Case file I/O (read/write_case_file)"
+        - "Simulation execution (run_case / run_openfoam_command)"
+        - "Meshing (GMSH / blockMesh)"
+        - "Post-processing (PyVista)"
+        - "SLURM / HPC"
+        - "Agent skills / subagents (agents/)"
+        - "Docker image / install / update"
+        - "Not sure"
+    validations:
+      required: true
+  - type: input
+    id: harness
+    attributes:
+      label: Agent CLI + model
+      placeholder: "e.g. Claude Code + Opus 4.8, Cursor + ..., Codex + ..."
+    validations:
+      required: true
+  - type: input
+    id: image
+    attributes:
+      label: Image tag / commit
+      description: "From `docker images ghcr.io/kasperhonore/foamagent` (a tag or `sha-...`) and/or `git rev-parse --short HEAD`."
+      placeholder: "e.g. sha-1a2b3c4, or latest pulled 2026-07-09"
+    validations:
+      required: true
+  - type: textarea
+    id: prompt
+    attributes:
+      label: The prompt / requirement (if agent-driven)
+      description: The natural-language requirement you gave the harness, verbatim.
+      render: text
+    validations:
+      required: false
+  - type: input
+    id: solver
+    attributes:
+      label: Solver / case (if applicable)
+      placeholder: "e.g. interFoam, simpleFoam — or the tutorial you based it on"
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: "MCP server logs (`docker logs foamagent-mcp`), the tool error text, and any OpenFOAM `log.*` tail. Usually the single most useful field — please don't skip it."
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: host
+    attributes:
+      label: Host OS + Docker version
+      placeholder: "e.g. Windows 11 + Docker Desktop 4.x, Ubuntu 22.04 + Docker 27, macOS 14 + ..."
+    validations:
+      required: false
