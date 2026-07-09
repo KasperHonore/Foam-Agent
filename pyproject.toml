@@ -52,9 +52,9 @@ all = ["foamagent[ollama,tools]"]
 foamagent-mcp = "src.mcp.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/csml-rpi/Foam-Agent"
-Repository = "https://github.com/csml-rpi/Foam-Agent"
-Issues = "https://github.com/csml-rpi/Foam-Agent/issues"
+Homepage = "https://github.com/KasperHonore/Foam-Agent"
+Repository = "https://github.com/KasperHonore/Foam-Agent"
+Issues = "https://github.com/KasperHonore/Foam-Agent/issues"
 
 [tool.setuptools.packages.find]
 include = ["src", "src.*"]

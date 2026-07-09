@@ -27,7 +27,7 @@ cd "$FoamAgent_PATH"
 # Enable with: docker run -e FOAMAGENT_SKIP_UPDATE=0 ...
 # Pin a version: docker run -e FOAMAGENT_VERSION=v2.0.0 ...
 # ---------------------------------------------------------------------------
-FOAMAGENT_REPO="https://github.com/csml-rpi/Foam-Agent.git"
+FOAMAGENT_REPO="https://github.com/KasperHonore/Foam-Agent.git"
 
 if [ "${FOAMAGENT_SKIP_UPDATE:-1}" != "1" ]; then
     echo "[entrypoint] Updating Foam-Agent from GitHub ..."
