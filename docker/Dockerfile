@@ -44,19 +44,30 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     && uv pip install -r /tmp/deps/pyproject.toml \
         --extra ollama --extra tools
 
-# Project code + baked-in FAISS database (see .dockerignore for exclusions)
+# Project code + baked-in FAISS database (see .dockerignore for exclusions).
+# --chown hands the tree to the non-root 'openfoam' user (see USER switch below)
+# without duplicating the layer, so the server can write runs/ and self-update.
 ENV FoamAgent_PATH=/home/openfoam/Foam-Agent
-COPY . $FoamAgent_PATH
+COPY --chown=openfoam:openfoam . $FoamAgent_PATH
 
-# Interactive shells: OpenFOAM env + venv on PATH + land in the project
-RUN echo '' >> /root/.bashrc \
-    && echo '# Foam-Agent shell setup' >> /root/.bashrc \
-    && echo 'source /opt/openfoam10/etc/bashrc 2>/dev/null || true' >> /root/.bashrc \
-    && echo 'export PATH="/opt/venv/bin:$PATH"' >> /root/.bashrc \
-    && echo 'cd "$FoamAgent_PATH" 2>/dev/null || true' >> /root/.bashrc
+# Interactive shells: OpenFOAM env + venv on PATH + land in the project.
+# Target the openfoam user's bashrc since that's the runtime user.
+RUN echo '' >> /home/openfoam/.bashrc \
+    && echo '# Foam-Agent shell setup' >> /home/openfoam/.bashrc \
+    && echo 'source /opt/openfoam10/etc/bashrc 2>/dev/null || true' >> /home/openfoam/.bashrc \
+    && echo 'export PATH="/opt/venv/bin:$PATH"' >> /home/openfoam/.bashrc \
+    && echo 'cd "$FoamAgent_PATH" 2>/dev/null || true' >> /home/openfoam/.bashrc
 
 COPY docker/foamagent-entrypoint.sh /usr/local/bin/foamagent-entrypoint.sh
 RUN chmod +x /usr/local/bin/foamagent-entrypoint.sh
+
+# Drop root for runtime. OpenFOAM v10 refuses #codeStream / dynamic-code
+# compilation when it detects the root user (isAdministrator() check in
+# dynamicCode.C), so cases using codeStream — the cylinder tutorial,
+# codedFixedValue BCs, etc. — fail as root. Every root-only build step is done
+# above; the MCP server and the solvers it launches now run as the non-root
+# 'openfoam' user the base image provides. Fixes #3.
+USER openfoam
 
 WORKDIR /home/openfoam/
 
