@@ -61,6 +61,12 @@ RUN echo '' >> /home/openfoam/.bashrc \
 COPY docker/foamagent-entrypoint.sh /usr/local/bin/foamagent-entrypoint.sh
 RUN chmod +x /usr/local/bin/foamagent-entrypoint.sh
 
+# The runtime 'openfoam' user needs a writable HOME cache: the HuggingFace
+# embedding model downloads to $HOME/.cache/huggingface on the first retrieval,
+# but earlier root build steps leave /home/openfoam/.cache owned by root, so that
+# first write fails with EACCES. Hand the cache tree to the runtime user.
+RUN mkdir -p /home/openfoam/.cache && chown -R openfoam:openfoam /home/openfoam/.cache
+
 # Drop root for runtime. OpenFOAM v10 refuses #codeStream / dynamic-code
 # compilation when it detects the root user (isAdministrator() check in
 # dynamicCode.C), so cases using codeStream — the cylinder tutorial,
