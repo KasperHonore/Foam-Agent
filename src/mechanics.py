@@ -205,38 +205,58 @@ def _openfoam_bashrc() -> str:
     return bashrc_path
 
 
+def _run_sourced(command: str, cwd: str, timeout: int) -> Tuple[int, str, str, bool]:
+    """Run ``command`` inside the sourced OpenFOAM environment.
+
+    Shared subprocess handling for run_command and run_openfoam_command: source
+    the OpenFOAM bashrc, run in a new process group (so a timeout SIGKILLs the
+    whole solver/mpirun tree, not just the bash wrapper), and capture output.
+
+    Returns (returncode, stdout, stderr, timed_out). On timeout the process
+    group is killed, returncode is -1 and timed_out is True; callers add their
+    own timeout message.
+    """
+    bashrc_path = _openfoam_bashrc()
+    full_command = f"source {bashrc_path} && {command}"
+
+    process = subprocess.Popen(
+        ['bash', '-c', full_command],
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        stdin=subprocess.DEVNULL,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+        return process.returncode, stdout or "", stderr or "", False
+    except subprocess.TimeoutExpired:
+        os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+        stdout, stderr = process.communicate()
+        return -1, stdout or "", stderr or "", True
+
+
 def run_command(script_path: str, out_file: str, err_file: str, working_dir: str, max_time_limit: int) -> None:
     """Execute a shell script inside the sourced OpenFOAM environment."""
     _log(f"Executing script {script_path} in {working_dir}")
     os.chmod(script_path, 0o777)
-    bashrc_path = _openfoam_bashrc()
 
-    command = f"source {bashrc_path} && bash {os.path.abspath(script_path)}"
+    returncode, stdout, stderr, timed_out = _run_sourced(
+        f"bash {os.path.abspath(script_path)}", working_dir, max_time_limit
+    )
+    if timed_out:
+        timeout_message = (
+            "OpenFOAM execution took too long. "
+            "This case, if set up right, does not require such large execution times.\n"
+        )
+        stdout = timeout_message + stdout
+        stderr = timeout_message + stderr
+        _log(f"Execution timed out: {script_path}")
 
     with open(out_file, 'w') as out, open(err_file, 'w') as err:
-        process = subprocess.Popen(
-            ['bash', "-c", command],
-            cwd=working_dir,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            stdin=subprocess.DEVNULL,
-            text=True,
-            start_new_session=True,
-        )
-        try:
-            stdout, stderr = process.communicate(timeout=max_time_limit)
-            out.write(stdout)
-            err.write(stderr)
-        except subprocess.TimeoutExpired:
-            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-            stdout, stderr = process.communicate()
-            timeout_message = (
-                "OpenFOAM execution took too long. "
-                "This case, if set up right, does not require such large execution times.\n"
-            )
-            out.write(timeout_message + stdout)
-            err.write(timeout_message + stderr)
-            _log(f"Execution timed out: {script_path}")
+        out.write(stdout)
+        err.write(stderr)
 
     _log(f"Executed script {script_path}")
 
@@ -251,25 +271,10 @@ def run_openfoam_command(
 
     Returns (returncode, stdout, stderr).
     """
-    bashrc_path = _openfoam_bashrc()
-    full_command = f"source {bashrc_path} && {command}"
-
-    process = subprocess.Popen(
-        ['bash', '-c', full_command],
-        cwd=case_dir,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        stdin=subprocess.DEVNULL,
-        text=True,
-        start_new_session=True,
-    )
-    try:
-        stdout, stderr = process.communicate(timeout=timeout)
-        return process.returncode, stdout, stderr
-    except subprocess.TimeoutExpired:
-        os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-        stdout, stderr = process.communicate()
-        return -1, stdout or "", (stderr or "") + f"\nCommand timed out after {timeout}s"
+    returncode, stdout, stderr, timed_out = _run_sourced(command, case_dir, timeout)
+    if timed_out:
+        stderr = stderr + f"\nCommand timed out after {timeout}s"
+    return returncode, stdout, stderr
 
 
 def check_foam_errors(directory: str) -> list:
