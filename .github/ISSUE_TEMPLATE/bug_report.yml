@@ -1,0 +1,64 @@
+name: "🐞 Bug report"
+description: "Something in Foam-Agent misbehaved."
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Just describe what went wrong — only the first field is required. Logs
+        (`docker logs foamagent-mcp`) and your harness + model help a lot when
+        you have them, but don't let a missing detail stop you from filing.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you expected, and what happened instead. Rough is fine.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce (optional)
+      description: The prompt, tool call, or command that triggers it — as much as you have.
+    validations:
+      required: false
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part? (optional)
+      options:
+        - "Not sure"
+        - "MCP server won't start / connect"
+        - "Tutorial retrieval"
+        - "Case file I/O"
+        - "Simulation execution (run_case)"
+        - "Meshing (GMSH / blockMesh)"
+        - "Post-processing (PyVista)"
+        - "SLURM / HPC"
+        - "Agent skills / subagents"
+        - "Docker image / install"
+    validations:
+      required: false
+  - type: input
+    id: harness
+    attributes:
+      label: Agent CLI + model (optional)
+      placeholder: "e.g. Claude Code + Opus 4.8, Cursor, Codex ..."
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs (optional)
+      description: "MCP server logs, the tool error text, any OpenFOAM log.* tail."
+      render: shell
+    validations:
+      required: false
+  - type: input
+    id: env
+    attributes:
+      label: Version + host (optional)
+      placeholder: "e.g. latest image on Windows 11 + Docker Desktop, or sha-1a2b3c4"
+    validations:
+      required: false

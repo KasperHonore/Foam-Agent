@@ -1,0 +1,42 @@
+name: PR title lint
+
+# Enforces Conventional Commit style on the PR title, since GitHub uses the PR
+# title as the squash/merge commit subject. Runs via pull_request_target so it
+# reads the title through the API only — it never checks out or runs PR code.
+
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  validate:
+    name: Validate PR title
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Match the types already used in this repo's history.
+          types: |
+            feat
+            fix
+            docs
+            refactor
+            chore
+            test
+            ci
+            build
+            perf
+            revert
+          # Scope is optional: both `fix:` and `fix(docker):` are accepted.
+          requireScope: false
+          # Subjects are lowercase here (e.g. "add issue templates"), so reject
+          # a leading capital letter.
+          subjectPattern: ^(?![A-Z]).+$
+          subjectPatternError: |
+            The subject "{subject}" should start with a lowercase letter,
+            e.g. "fix(docker): correct the image tag".

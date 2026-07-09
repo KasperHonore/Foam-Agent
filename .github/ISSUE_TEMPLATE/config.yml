@@ -3,3 +3,6 @@ contact_links:
   - name: ❓ FAQ
     url: https://github.com/KasperHonore/Foam-Agent/blob/main/FAQ.md
     about: Common questions — API keys, OpenFOAM versions, updating, disk space, custom meshes — answered here.
+  - name: 💬 Questions & discussion
+    url: https://github.com/KasperHonore/Foam-Agent/discussions
+    about: "How do I…" questions, ideas, and general chat — start a discussion rather than an issue.

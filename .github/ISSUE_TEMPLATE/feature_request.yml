@@ -1,0 +1,33 @@
+name: "💡 Feature request"
+description: "Suggest a tool, skill, solver, or workflow improvement."
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Rough ideas are welcome — the more concrete the situation that prompted
+        it, the easier it is to design the right thing.
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like?
+      description: The tool, skill, solver, or behavior you're imagining, and the problem it solves.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area (optional)
+      options:
+        - "Not sure"
+        - "New MCP tool"
+        - "Agent skill / subagent"
+        - "Solver / physics coverage"
+        - "Meshing"
+        - "Post-processing / visualization"
+        - "HPC / SLURM"
+        - "Docs / onboarding"
+        - "Packaging / Docker / CI"
+    validations:
+      required: false
