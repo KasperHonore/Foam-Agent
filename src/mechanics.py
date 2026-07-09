@@ -27,6 +27,8 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from text_utils import tokenize
+
 SRC_DIR = Path(__file__).resolve().parent
 REPO_DIR = SRC_DIR.parent
 DATABASE_DIR = REPO_DIR / "database"
@@ -47,11 +49,8 @@ def _log(message: str) -> None:
 # ============================================================================
 # Text helpers
 # ============================================================================
-
-def tokenize(text: str) -> str:
-    text = text.replace('_', ' ')
-    text = re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', text)
-    return text.lower()
+# `tokenize` is imported from text_utils so the query-time normalization here
+# matches the index-time normalization used by the FAISS builders exactly.
 
 
 def parse_directory_structure(data: str) -> dict:
