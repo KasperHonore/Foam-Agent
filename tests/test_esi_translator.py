@@ -82,17 +82,29 @@ RAS
     )
 
 
+def _write_minimal_fvsolution(case: Path) -> None:
+    """A valid-but-minimal fvSolution so the pFinal/pRef injection has something to bite on."""
+    (case / "system" / "fvSolution").write_text(
+        "solvers { p { solver PCG; relTol 0; } }\nPISO { nCorrectors 2; }\n",
+        encoding="utf-8",
+    )
+
+
+def _translate(case: Path, rules_path: Path) -> None:
+    ESITranslator(case, rules_path=rules_path).run_translation_pipeline()
+
+
 class TestESITranslator:
     def test_renames_physical_and_momentum_files(self, case_dir: Path, rules_path: Path) -> None:
         _write_icofoam_case(case_dir)
-        ESITranslator(case_dir, rules_path=rules_path).run_translation_pipeline()
+        _translate(case_dir, rules_path)
 
         assert not (case_dir / "constant" / "physicalProperties").exists()
         assert (case_dir / "constant" / "thermophysicalProperties").is_file()
 
     def test_injects_pfinal_and_pref_for_icofoam(self, case_dir: Path, rules_path: Path) -> None:
         _write_icofoam_case(case_dir)
-        ESITranslator(case_dir, rules_path=rules_path).run_translation_pipeline()
+        _translate(case_dir, rules_path)
 
         fv = (case_dir / "system" / "fvSolution").read_text()
         assert "pFinal" in fv
@@ -104,7 +116,7 @@ class TestESITranslator:
         self, case_dir: Path, rules_path: Path
     ) -> None:
         _write_icofoam_case(case_dir)
-        ESITranslator(case_dir, rules_path=rules_path).run_translation_pipeline()
+        _translate(case_dir, rules_path)
 
         transport = case_dir / "constant" / "transportProperties"
         assert transport.is_file()
@@ -112,7 +124,7 @@ class TestESITranslator:
 
     def test_ras_model_keyword_swap(self, case_dir: Path, rules_path: Path) -> None:
         _write_ras_case(case_dir)
-        ESITranslator(case_dir, rules_path=rules_path).run_translation_pipeline()
+        _translate(case_dir, rules_path)
 
         turb = (case_dir / "constant" / "turbulenceProperties").read_text()
         assert "RASModel kEpsilon;" in turb
@@ -124,18 +136,15 @@ class TestESITranslator:
             encoding="utf-8",
         )
         with pytest.raises(ValueError, match="adjointShapeOptimisationFoam"):
-            ESITranslator(case_dir, rules_path=rules_path).run_translation_pipeline()
+            _translate(case_dir, rules_path)
 
     def test_strips_markdown_fences(self, case_dir: Path, rules_path: Path) -> None:
         (case_dir / "system" / "controlDict").write_text(
             "```foam\napplication icoFoam;\n```\n",
             encoding="utf-8",
         )
-        (case_dir / "system" / "fvSolution").write_text(
-            "solvers { p { solver PCG; relTol 0; } }\nPISO { nCorrectors 2; }\n",
-            encoding="utf-8",
-        )
-        ESITranslator(case_dir, rules_path=rules_path).run_translation_pipeline()
+        _write_minimal_fvsolution(case_dir)
+        _translate(case_dir, rules_path)
         text = (case_dir / "system" / "controlDict").read_text()
         assert "```" not in text
         assert "FoamFile" in text
@@ -146,7 +155,7 @@ class TestESITranslator:
         log_file = case_dir / "log.icoFoam"
         log_file.write_text("Execution log\n", encoding="utf-8")
         
-        ESITranslator(case_dir, rules_path=rules_path).run_translation_pipeline()
+        _translate(case_dir, rules_path)
         
         # Verify they don't have the FoamFile header
         assert "FoamFile" not in allrun.read_text(encoding="utf-8")
@@ -157,15 +166,12 @@ class TestESITranslator:
             "application icoFoam;\n",
             encoding="utf-8",
         )
-        (case_dir / "system" / "fvSolution").write_text(
-            "solvers { p { solver PCG; relTol 0; } }\nPISO { nCorrectors 2; }\n",
-            encoding="utf-8",
-        )
+        _write_minimal_fvsolution(case_dir)
         (case_dir / "constant" / "physicalProperties").write_text(
             "Chemkin thermo database leak\n",
             encoding="utf-8",
         )
-        ESITranslator(case_dir, rules_path=rules_path).run_translation_pipeline()
+        _translate(case_dir, rules_path)
         props = (case_dir / "constant" / "thermophysicalProperties").read_text()
         assert "nu" in props
         assert "Chemkin" not in props
@@ -209,7 +215,7 @@ def test_extract_and_translate_cavity_from_database(tmp_path: Path, rules_path: 
         solver="icoFoam",
         category="cavity",
     )
-    ESITranslator(out, rules_path=rules_path).run_translation_pipeline()
+    _translate(out, rules_path)
 
     assert (out / "constant" / "thermophysicalProperties").is_file()
     assert "icoFoam" in (out / "system" / "controlDict").read_text()
