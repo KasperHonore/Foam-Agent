@@ -265,6 +265,11 @@ def unwrap(response):
     return response.structured_content or response.data or {}
 
 
+def unwrap_scalar(value):
+    """Scalar tool results (plain strings) may arrive wrapped as {"result": ...}."""
+    return value.get("result", value) if isinstance(value, dict) else value
+
+
 async def main():
     print("Lid-Driven Cavity Test (key-free MCP, no LLM calls)")
     print("=" * 60)
@@ -295,11 +300,9 @@ async def main():
             results["retrieval"] = similar["found"]
 
             # 3. Create case files
-            case_dir = unwrap(await client.call_tool(
+            case_dir = unwrap_scalar(unwrap(await client.call_tool(
                 "resolve_case_dir", {"case_name": "lid_driven_cavity_mcp_test"}
-            ))
-            if isinstance(case_dir, dict):  # plain-string results may arrive wrapped
-                case_dir = case_dir.get("result", case_dir)
+            )))
             print(f"case_dir: {case_dir}")
 
             for rel_path, content in CASE_FILES.items():
@@ -337,9 +340,7 @@ async def main():
 
             # 6. Visualization (PyVista, deterministic script)
             if results["simulation_run"]:
-                foam_file = unwrap(await client.call_tool("ensure_foam_file", {"case_dir": case_dir}))
-                if isinstance(foam_file, dict):
-                    foam_file = foam_file.get("result", foam_file)
+                foam_file = unwrap_scalar(unwrap(await client.call_tool("ensure_foam_file", {"case_dir": case_dir})))
                 viz = unwrap(await client.call_tool("run_python_script", {
                     "case_dir": case_dir,
                     "script": PYVISTA_SCRIPT.format(foam_file=foam_file),
