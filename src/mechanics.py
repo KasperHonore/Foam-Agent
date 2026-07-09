@@ -601,6 +601,11 @@ def ensure_foam_file(case_dir: str) -> str:
     return foam
 
 
+def _as_text(stream) -> str:
+    """Decode a subprocess stream (bytes or str) to text."""
+    return stream.decode() if isinstance(stream, bytes) else str(stream)
+
+
 def run_python_script(
     case_dir: str,
     script: str,
@@ -630,7 +635,7 @@ def run_python_script(
             stderr=subprocess.PIPE,
             timeout=timeout_s,
         )
-        stdout = completed.stdout.decode() if isinstance(completed.stdout, bytes) else str(completed.stdout)
+        stdout = _as_text(completed.stdout)
 
         if expected_abs:
             if os.path.exists(expected_abs) and os.path.getsize(expected_abs) > 0:
@@ -642,15 +647,15 @@ def run_python_script(
         return True, "", [], stdout
 
     except subprocess.TimeoutExpired as e:
-        out = e.stdout.decode() if isinstance(e.stdout, bytes) else str(e.stdout)
-        err = e.stderr.decode() if isinstance(e.stderr, bytes) else str(e.stderr)
+        out = _as_text(e.stdout)
+        err = _as_text(e.stderr)
         return False, "", [
             f"Script timed out after {timeout_s}s",
             f"STDERR:\n{err}",
         ], out
     except subprocess.CalledProcessError as e:
-        err = e.stderr.decode() if isinstance(e.stderr, bytes) else str(e.stderr)
-        out = e.stdout.decode() if isinstance(e.stdout, bytes) else str(e.stdout)
+        err = _as_text(e.stderr)
+        out = _as_text(e.stdout)
         return False, "", [
             f"Script execution failed (exit code {e.returncode})\nSTDERR:\n{err}"
         ], out

@@ -56,16 +56,10 @@ class ESITranslator:
     # Algorithm 1: defensive solver intercept
     # ------------------------------------------------------------------
     def _defensive_solver_intercept(self) -> None:
-        control_dict = self.case_path / "system" / "controlDict"
-        if not control_dict.is_file():
+        solver = read_application(self.case_path)
+        if solver is None:
             return
 
-        content = control_dict.read_text(encoding="utf-8", errors="ignore")
-        match = re.search(r"application\s+(\w+)\s*;", content)
-        if not match:
-            return
-
-        solver = match.group(1)
         self._application = solver
         blacklist = set(self.rules.get("blacklisted_solvers", []))
         if solver in blacklist:
@@ -118,7 +112,8 @@ class ESITranslator:
         except UnicodeDecodeError:
             return
 
-        modified = self._sanitize_llm_artifacts(original, file_path)
+        modified = self._strip_llm_artifacts(original)
+        modified = self._ensure_foam_header(modified, file_path)
         modified = self._apply_keyword_swaps(modified, file_path)
 
         if modified != original:
@@ -126,11 +121,12 @@ class ESITranslator:
             rel = file_path.relative_to(self.case_path)
             print(f"<esi_patch>Translated {rel}</esi_patch>")
 
-    def _sanitize_llm_artifacts(self, content: str, file_path: Path) -> str:
+    def _strip_llm_artifacts(self, content: str) -> str:
         content = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", content)
         content = re.sub(r"\s*```$", "", content)
-        content = content.strip()
+        return content.strip()
 
+    def _ensure_foam_header(self, content: str, file_path: Path) -> str:
         if "FoamFile" in content:
             return content
 
@@ -192,7 +188,7 @@ FoamFile
         if not fv_solution.is_file():
             return
 
-        solver = self._application or self._read_application()
+        solver = self._application or read_application(self.case_path)
         if solver not in set(self.rules.get("transient_solvers", [])):
             return
 
@@ -208,16 +204,6 @@ FoamFile
         if updated != content:
             fv_solution.write_text(updated, encoding="utf-8")
             print("<esi_patch>Updated system/fvSolution for ESI transient solvers</esi_patch>")
-
-    def _read_application(self) -> str | None:
-        control_dict = self.case_path / "system" / "controlDict"
-        if not control_dict.is_file():
-            return None
-        match = re.search(
-            r"application\s+(\w+)\s*;",
-            control_dict.read_text(encoding="utf-8", errors="ignore"),
-        )
-        return match.group(1) if match else None
 
     def _inject_pfinal_block(self, content: str) -> str:
         pfinal = self.rules.get("pfinal_block", "")
@@ -300,7 +286,7 @@ FoamFile
 
     def _provision_transport_properties(self) -> None:
         """ESI incompressible solvers (e.g. icoFoam) read constant/transportProperties."""
-        solver = self._application or self._read_application()
+        solver = self._application or read_application(self.case_path)
         if solver not in set(self.rules.get("solvers_using_transport_properties", [])):
             return
 
@@ -351,6 +337,21 @@ FoamFile
         if updated != content:
             control_dict.write_text(updated, encoding="utf-8")
             print("<esi_patch>Removed Foundation functionObjects from controlDict</esi_patch>")
+
+
+def read_application(case_path: Path) -> str | None:
+    """Return the solver named in ``system/controlDict``'s ``application`` entry.
+
+    Lenient: returns None if the file is missing or has no application entry.
+    Shared by ESITranslator and scripts/verify_esi_translation.py so the
+    controlDict parsing lives in exactly one place.
+    """
+    control_dict = case_path / "system" / "controlDict"
+    if not control_dict.is_file():
+        return None
+    text = control_dict.read_text(encoding="utf-8", errors="ignore")
+    match = re.search(r"application\s+(\w+)\s*;", text)
+    return match.group(1) if match else None
 
 
 def _remove_dict_block(content: str, entry_name: str) -> str:

@@ -119,7 +119,7 @@ def _stream_extract(
   index: dict[str, str] = {}
   index_lines: list[str] = []
   structure_lines: list[str] = []
-  target = False
+  is_target_case = False
   current_folder: str | None = None
   current_file: str | None = None
   current_lines: list[str] = []
@@ -127,7 +127,7 @@ def _stream_extract(
 
   def _flush_file() -> None:
     nonlocal current_file, current_lines, files_written
-    if not target or not current_file or not current_folder:
+    if not is_target_case or not current_file or not current_folder:
       current_file = None
       current_lines = []
       return
@@ -153,7 +153,7 @@ def _stream_extract(
         index = {}
         index_lines = []
         structure_lines = []
-        target = False
+        is_target_case = False
         current_folder = None
         current_file = None
         current_lines = []
@@ -163,7 +163,7 @@ def _stream_extract(
         continue
 
       if stripped == "</case_end>":
-        if target:
+        if is_target_case:
           _flush_file()
           if files_written == 0:
             raise RuntimeError("Matched case block contained no files")
@@ -171,7 +171,7 @@ def _stream_extract(
         in_case = False
         continue
 
-      if not target:
+      if not is_target_case:
         if stripped == "<index>":
           in_index = True
           index_lines = []
@@ -200,7 +200,7 @@ def _stream_extract(
             domain=domain,
             category=category,
           ):
-            target = True
+            is_target_case = True
             folders = _parse_directory_structure("".join(structure_lines))
             print(
               f"[+] Matched case: name={index.get('name')} "

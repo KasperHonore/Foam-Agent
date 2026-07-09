@@ -71,6 +71,32 @@ def _safe_join(case_dir: str, relative_path: str) -> str:
     return full
 
 
+def _require_case_dir(case_dir: str) -> str:
+    """Normalize to an absolute path and require the case directory to exist.
+
+    Only for tools that operate on an existing case (run/command/translate);
+    write_case_file and read_case_file intentionally do their own thing.
+    """
+    case_dir = _abs_case_dir(case_dir)
+    if not os.path.exists(case_dir):
+        raise ValueError(f"Case directory does not exist: {case_dir}")
+    return case_dir
+
+
+def _truncate_head(text: str, max_chars: int) -> str:
+    """Keep the head, mark the cut tail — for content whose start matters."""
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars] + "\n... [truncated]"
+
+
+def _truncate_tail(text: str, max_chars: int) -> str:
+    """Keep the tail, mark the cut head — for logs/output where errors are last."""
+    if len(text) <= max_chars:
+        return text
+    return "... [truncated] ...\n" + text[-max_chars:]
+
+
 # ============================================================================
 # Discovery / retrieval tools
 # ============================================================================
@@ -106,8 +132,8 @@ async def search_tutorials(
     results = await asyncio.to_thread(mechanics.retrieve_faiss, index, query, topk)
     for r in results:
         content = r.get("full_content")
-        if isinstance(content, str) and len(content) > max_chars_per_result:
-            r["full_content"] = content[:max_chars_per_result] + "\n... [truncated]"
+        if isinstance(content, str):
+            r["full_content"] = _truncate_head(content, max_chars_per_result)
     return results
 
 
@@ -190,13 +216,11 @@ async def read_case_file(
     if not os.path.exists(path):
         raise FileNotFoundError(f"File not found: {path}")
     content = mechanics.read_file(path)
-    if len(content) > max_chars:
-        # Keep the tail for logs (errors are at the end), the head otherwise
-        name = os.path.basename(relative_path)
-        if name.startswith("log") or name.endswith((".out", ".err")):
-            return "... [truncated] ...\n" + content[-max_chars:]
-        return content[:max_chars] + "\n... [truncated]"
-    return content
+    # Keep the tail for logs (errors are at the end), the head otherwise.
+    name = os.path.basename(relative_path)
+    if name.startswith("log") or name.endswith((".out", ".err")):
+        return _truncate_tail(content, max_chars)
+    return _truncate_head(content, max_chars)
 
 
 @mcp.tool(name="list_case_files")
@@ -239,9 +263,7 @@ async def run_case(
     the relevant log excerpts — diagnose them, fix the case files with
     write_case_file, and call run_case again.
     """
-    case_dir = _abs_case_dir(case_dir)
-    if not os.path.exists(case_dir):
-        raise ValueError(f"Case directory does not exist: {case_dir}")
+    case_dir = _require_case_dir(case_dir)
 
     await ctx.info(f"Running Allrun in {case_dir} (timeout {timeout}s)")
     errors = await asyncio.to_thread(
@@ -276,18 +298,17 @@ async def run_openfoam_command(
     Useful for mesh conversion (gmshToFoam), mesh quality checks (checkMesh),
     decomposePar, postProcess, etc. For full simulations use run_case instead.
     """
-    case_dir = _abs_case_dir(case_dir)
-    if not os.path.exists(case_dir):
-        raise ValueError(f"Case directory does not exist: {case_dir}")
+    case_dir = _require_case_dir(case_dir)
 
     returncode, stdout, stderr = await asyncio.to_thread(
         mechanics.run_openfoam_command, case_dir, command, timeout
     )
 
-    def _tail(text: str) -> str:
-        return text if len(text) <= max_chars else "... [truncated] ...\n" + text[-max_chars:]
-
-    return CommandResponse(returncode=returncode, stdout=_tail(stdout), stderr=_tail(stderr))
+    return CommandResponse(
+        returncode=returncode,
+        stdout=_truncate_tail(stdout, max_chars),
+        stderr=_truncate_tail(stderr, max_chars),
+    )
 
 
 class PythonScriptResponse(BaseModel):
@@ -304,6 +325,7 @@ async def run_python_script(
     filename: str = Field(default="script.py", description="Filename to save the script as inside the case"),
     expected_output: str = Field(default="", description="Relative path of a file the script must produce (e.g. 'velocity.png' or 'geometry.msh'); success requires it to exist"),
     timeout: int = Field(default=300, description="Max execution time in seconds"),
+    max_chars: int = Field(default=20000, description="Truncate captured stdout to this many characters (tail kept)"),
     ctx: Context = None,
 ) -> PythonScriptResponse:
     """Execute a Python script in the case directory (server-side Python).
@@ -324,9 +346,9 @@ async def run_python_script(
             timeout_s=timeout,
         )
     )
-    if len(stdout) > 20000:
-        stdout = "... [truncated] ...\n" + stdout[-20000:]
-    return PythonScriptResponse(success=ok, artifact=artifact, errors=errors, stdout=stdout)
+    return PythonScriptResponse(
+        success=ok, artifact=artifact, errors=errors, stdout=_truncate_tail(stdout, max_chars)
+    )
 
 
 @mcp.tool(name="ensure_foam_file")
@@ -369,9 +391,7 @@ async def translate_case_to_esi(
     Rules-based best-effort translation (dictionary names, keywords, solver
     names). Verify the translated case against your ESI installation.
     """
-    case_dir = _abs_case_dir(case_dir)
-    if not os.path.exists(case_dir):
-        raise ValueError(f"Case directory does not exist: {case_dir}")
+    case_dir = _require_case_dir(case_dir)
 
     def _translate():
         # The translator prints progress to stdout; keep stdio transport clean.

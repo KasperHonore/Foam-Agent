@@ -41,12 +41,15 @@ GENERATED_NOTE = (
     "edit the source and re-run the script; do not edit this copy. -->"
 )
 
-# Tool targets for skill directories (dir-copy of SKILL.md + references/)
+# Tool targets for skill directories (dir-copy of SKILL.md + references/).
+# .cursor/skills renders identically to the others; the .cursor pointer rule
+# (CURSOR_RULE_PATH) is handled separately.
 SKILL_DIR_TARGETS = [
     ".claude/skills",
     ".opencode/skill",
     ".codex/skills",
     ".pi/skills",
+    ".cursor/skills",
 ]
 
 # Tool targets for subagent markdown files: (target dir, extra frontmatter lines)
@@ -58,14 +61,28 @@ SUBAGENT_TARGETS = [
 CURSOR_RULE_PATH = ".cursor/rules/foamagent-skills.mdc"
 
 
+def _discover_skills() -> list[Path]:
+    """Every skill source directory (those containing a SKILL.md), sorted."""
+    return [d for d in sorted(SKILLS_SRC.iterdir()) if (d / "SKILL.md").is_file()]
+
+
+def _frontmatter_end(lines: list[str]) -> int | None:
+    """Index of the closing '---' of a leading YAML frontmatter block, else None."""
+    if not (lines and lines[0].strip() == "---"):
+        return None
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            return i
+    return None
+
+
 def _with_note(content: str, source: Path) -> str:
     """Insert the GENERATED note right after the frontmatter block."""
     note = GENERATED_NOTE.format(source=source.relative_to(REPO).as_posix())
     lines = content.split("\n")
-    if lines and lines[0].strip() == "---":
-        for i in range(1, len(lines)):
-            if lines[i].strip() == "---":
-                return "\n".join(lines[: i + 1] + ["", note] + lines[i + 1:])
+    end = _frontmatter_end(lines)
+    if end is not None:
+        return "\n".join(lines[: end + 1] + ["", note] + lines[end + 1:])
     return note + "\n\n" + content
 
 
@@ -73,10 +90,9 @@ def _add_frontmatter_keys(content: str, extra: list[str]) -> str:
     if not extra:
         return content
     lines = content.split("\n")
-    if lines and lines[0].strip() == "---":
-        for i in range(1, len(lines)):
-            if lines[i].strip() == "---":
-                return "\n".join(lines[:i] + extra + lines[i:])
+    end = _frontmatter_end(lines)
+    if end is not None:
+        return "\n".join(lines[:end] + extra + lines[end:])
     return content
 
 
@@ -102,7 +118,7 @@ def _build_skill_dir(skill_dir: Path, out_dir: Path) -> None:
 
 
 def _build_cursor_rule() -> str:
-    skills = sorted(d.name for d in SKILLS_SRC.iterdir() if (d / "SKILL.md").is_file())
+    skills = [d.name for d in _discover_skills()]
     skill_lines = "\n".join(
         f"- `{name}`: read and follow `.cursor/skills/{name}/SKILL.md`" for name in skills
     )
@@ -128,14 +144,11 @@ them inline.
 
 def _render_all(root: Path) -> None:
     """Render every generated asset under the given root (repo or temp dir)."""
-    skills = [d for d in sorted(SKILLS_SRC.iterdir()) if (d / "SKILL.md").is_file()]
+    skills = _discover_skills()
 
     for target in SKILL_DIR_TARGETS:
         for skill in skills:
             _build_skill_dir(skill, root / target / skill.name)
-    # Cursor reads skills from .cursor/skills in this layout (pointer rule below)
-    for skill in skills:
-        _build_skill_dir(skill, root / ".cursor" / "skills" / skill.name)
 
     if SUBAGENTS_SRC.exists():
         for target_dir, extra in SUBAGENT_TARGETS:
@@ -154,8 +167,8 @@ def _render_all(root: Path) -> None:
 def _managed_paths(root: Path) -> list[Path]:
     """Every path this script owns (for cleaning and for --check)."""
     paths = []
-    skills = [d.name for d in sorted(SKILLS_SRC.iterdir()) if (d / "SKILL.md").is_file()]
-    for target in SKILL_DIR_TARGETS + [".cursor/skills"]:
+    skills = [d.name for d in _discover_skills()]
+    for target in SKILL_DIR_TARGETS:
         for name in skills:
             paths.append(root / target / name)
     if SUBAGENTS_SRC.exists():
@@ -216,7 +229,7 @@ def main() -> int:
             path.unlink()
     _render_all(REPO)
     print("Agent assets synced to: " + ", ".join(
-        SKILL_DIR_TARGETS + [".cursor/skills", ".cursor/rules"] + [t for t, _ in SUBAGENT_TARGETS]
+        SKILL_DIR_TARGETS + [".cursor/rules"] + [t for t, _ in SUBAGENT_TARGETS]
     ))
     return 0
 
