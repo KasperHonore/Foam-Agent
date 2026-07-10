@@ -175,7 +175,7 @@ def main() -> int:
         print("silence there is normal, not a hang.")
     else:
         print("Not ready yet. Run the fixes above in order, or open this repo in your AI agent")
-        print("and say: \"set up foam-agent for me\" — the foam-setup skill does this interactively.")
+        print("and say: \"set up foam-agent for me\" -- the foam-setup skill does this interactively.")
     return 0 if healthy else 1
 
 
