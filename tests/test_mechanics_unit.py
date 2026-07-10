@@ -108,6 +108,77 @@ def test_parse_directory_structure():
 
 
 # ---------------------------------------------------------------------------
+# Similar-case retrieval (FAISS calls stubbed out)
+# ---------------------------------------------------------------------------
+
+_DIR_STRUCTURE = (
+    "<dir>directory name: system. File names in this directory: [controlDict]</dir>\n"
+    "<dir>directory name: 0. File names in this directory: [U, p]</dir>"
+)
+
+
+def _fake_retrieve_faiss(calls):
+    """Stub returning one matching tutorial; records (database_name, topk)."""
+    candidate = {
+        "case_name": "cavity",
+        "case_domain": "incompressible",
+        "case_category": "cavity",
+        "case_solver": "icoFoam",
+        "score": 0.1,
+        "full_content": (
+            "<index>\ncase name: cavity\n</index>\n"
+            f"<directory_structure>\n{_DIR_STRUCTURE}\n</directory_structure>"
+        ),
+    }
+
+    def fake(database_name, query, topk=1):
+        calls.append((database_name, topk))
+        if database_name == "openfoam_allrun_scripts":
+            return [{"full_content": "<allrun_script>blockMesh</allrun_script>"}]
+        return [candidate]
+
+    return fake
+
+
+def test_find_similar_case_mirrors_dir_structure_into_selected_case(monkeypatch):
+    calls = []
+    monkeypatch.setattr(mechanics, "retrieve_faiss", _fake_retrieve_faiss(calls))
+
+    result = mechanics.find_similar_case("my_cavity", "icoFoam", "incompressible", "cavity", 2)
+
+    assert result["found"] is True
+    assert result["dir_structure"] == _DIR_STRUCTURE
+    assert result["selected_case"]["dir_structure"] == _DIR_STRUCTURE
+    assert "<allrun_script>" in result["allrun_reference"]
+    assert ("openfoam_allrun_scripts", 2) in calls
+    # candidates stay lightweight summaries
+    assert "dir_structure" not in result["candidates"][0]
+
+
+def test_find_similar_case_searchdocs_zero_skips_allrun_retrieval(monkeypatch):
+    calls = []
+    monkeypatch.setattr(mechanics, "retrieve_faiss", _fake_retrieve_faiss(calls))
+
+    result = mechanics.find_similar_case("my_cavity", "icoFoam", "incompressible", "cavity", 0)
+
+    assert result["found"] is True
+    assert result["selected_case"]["dir_structure"] == _DIR_STRUCTURE
+    assert result["allrun_reference"] == ""
+    assert [db for db, _ in calls] == ["openfoam_tutorials_structure"]
+
+
+def test_find_similar_case_domain_mismatch_returns_not_found(monkeypatch):
+    calls = []
+    monkeypatch.setattr(mechanics, "retrieve_faiss", _fake_retrieve_faiss(calls))
+
+    result = mechanics.find_similar_case("my_case", "icoFoam", "multiphase", "cavity", 2)
+
+    assert result["found"] is False
+    assert result["selected_case"] is None
+    assert result["dir_structure"] == ""
+
+
+# ---------------------------------------------------------------------------
 # Mesh boundary parsing
 # ---------------------------------------------------------------------------
 

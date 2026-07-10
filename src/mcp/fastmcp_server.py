@@ -143,15 +143,21 @@ async def find_similar_case(
     case_solver: str = Field(description="Chosen OpenFOAM solver (must be one of get_case_stats case_solver values)"),
     case_domain: str = Field(description="Case domain (one of get_case_stats case_domain values)"),
     case_category: str = Field(description="Case category (one of get_case_stats case_category values)"),
-    searchdocs: int = Field(default=5, description="How many similar Allrun references to collect"),
+    searchdocs: int = Field(default=5, description="How many similar Allrun references to collect; 0 skips the Allrun retrieval entirely (much faster)"),
     ctx: Context = None,
 ) -> dict:
     """Find the most similar Foundation v10 tutorial case to use as a reference.
 
     Recall is semantic, then hard-filtered on domain and reranked by solver
     match. Returns the selected tutorial's full content, its directory
-    structure and similar Allrun scripts. YOU judge how closely to follow the
-    reference (check the returned selected_case metadata against your target).
+    structure (top-level dir_structure, also mirrored into selected_case) and
+    similar Allrun scripts. YOU judge how closely to follow the reference
+    (check the returned selected_case metadata against your target).
+
+    Latency: each call embeds two queries with the local CPU embedding model
+    and can take tens of seconds even when the model is warm — it is working,
+    not hanging. The Allrun retrieval is the expensive half; pass searchdocs=0
+    to skip it when you only need the tutorial reference.
 
     Note: case_category is a free-text retrieval hint and is NOT validated
     against get_case_stats values — an unknown category is accepted silently

@@ -518,6 +518,10 @@ def find_similar_case(
     semantic search, hard-filter on domain, rerank by solver match, and
     collect the matching Allrun scripts. Judging HOW to use the reference
     is the calling agent's job.
+
+    Every call pays two query-embedding passes on the local CPU model; the
+    Allrun one embeds the selected case's directory structure and dominates
+    the latency. searchdocs=0 skips it.
     """
     case_info = (
         f"case name: {case_name}\ncase domain: {case_domain}\n"
@@ -563,6 +567,7 @@ def find_similar_case(
     m = re.search(r"<directory_structure>(.*?)</directory_structure>", tutorial_reference, re.DOTALL)
     if m:
         dir_structure = m.group(1).strip()
+    if dir_structure and searchdocs > 0:
         index_content = (
             f"<index>\ncase name: {selected.get('case_name')}\ncase solver: {selected.get('case_solver')}\n</index>\n"
             f"<directory_structure>\n{dir_structure}\n</directory_structure>"
@@ -576,7 +581,7 @@ def find_similar_case(
 
     return {
         "found": True,
-        "selected_case": _summary(selected),
+        "selected_case": dict(_summary(selected), dir_structure=dir_structure),
         "tutorial_reference": tutorial_reference,
         "dir_structure": dir_structure,
         "allrun_reference": allrun_reference,
