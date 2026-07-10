@@ -1,0 +1,105 @@
+# Convergence judgement (on top of parse_solver_log)
+
+`parse_solver_log(case_dir)` turns a solver log into typed convergence facts
+— numbers computed from the log, never guessed, at the same cost whether the
+log is a hundred lines or a million. It works on partial, in-flight logs
+(verdict `incomplete` plus time progress), so a running case can be checked
+too. By default it parses `log.<application>` with the application read from
+`system/controlDict`; pass `log_file` to inspect any other log
+(`log.potentialFoam`, `log.blockMesh`, ...).
+
+You get: `solver` (the log's own Exec entry), `completed` (`End` marker
+reached), `time` (first/latest `Time =` vs the controlDict `endTime`),
+per-field `residuals` (first initial, last initial, last final, worst
+initial and when it occurred), `courant` (run-wide max and when, last
+mean/max — absent when the log has no Courant lines),
+`cumulative_continuity` (last cumulative time-step continuity error),
+`fatal_errors` (FOAM FATAL blocks, verbatim), and a `verdict` with
+`evidence` strings naming what drove it.
+
+**The verdict applies conservative mechanical defaults; the judgement layer
+is this document.** The built-in rules, in precedence order:
+
+- `error` — a FOAM FATAL (IO) ERROR is in the log. The full block is in
+  `fatal_errors`; the evidence quotes its first line.
+- `diverged` — a per-line trigger fired: a residual at/above 1e6 or
+  non-finite, a max Courant at/above 100, or a floating point exception trap
+  actually firing (the sigFpe startup banner is excluded). The evidence
+  names each trigger's field, value and time — that is where diagnosis
+  starts.
+- `incomplete` — two distinct situations, told apart by the evidence:
+  "no 'End' marker" (crash, timeout, or still running — compare
+  `time.latest_time` with `time.end_time`), or "completed, but last final
+  residual for `<field>` ... is not under the converged threshold" (the run
+  finished, yet a field's last final residual is >= 1e-4).
+- `converged` — `End` reached and every field's last final residual under
+  1e-4. The evidence lists the final residuals — or says "no residual lines
+  found in the log", which is completion, not a physics endorsement (see
+  the suspicion list).
+
+## Steady vs transient: which numbers to trust
+
+- **Steady-state solvers (simpleFoam and the SIMPLE family).** Convergence
+  is the INITIAL residuals falling over the iterations: compare each field's
+  `first_initial` to `last_initial`. Inner final residuals are nearly always
+  small (each iteration's linear solves finish their own work), so the
+  mechanical `converged` verdict is weak evidence on a steady run — a solver
+  that merely ran out of iterations usually still earns it. The parser also
+  does not detect the `SIMPLE solution converged in N iterations` line; when
+  the initial-residual trend is ambiguous, read the log tail for it.
+- **Transient solvers (icoFoam, pimpleFoam, interFoam, ...).** Initial
+  residuals stay finite every step by construction (each time step is a new
+  problem) — a falling initial-residual trend is NOT expected. Trust the
+  per-step final residuals (`last_final`), `cumulative_continuity` (small
+  and not growing), the Courant history, and completion:
+  `time.latest_time` must reach `time.end_time`.
+
+## Per-solver targets
+
+| Solver | Type | Fields in `residuals` | Healthy looks like | Watch for |
+|---|---|---|---|---|
+| icoFoam | transient, laminar PISO | Ux, Uy(, Uz), p | last finals ~1e-6 or below; `cumulative_continuity` tiny; `courant.max` well under 1 | Courant drifting toward/past 1 — accuracy degrades long before the 100 blow-up trigger; continuity errors growing step over step |
+| simpleFoam | steady SIMPLE | Ux/Uy/Uz, p, k/epsilon/omega | `last_initial` down 3–4 orders from `first_initial`; targets ~1e-4 for U and turbulence, ~1e-3–1e-4 for p (slowest to fall) | a `converged` verdict with `last_initial` stuck around 1e-2..1e-3 = plateaued, NOT converged — error-playbook fix (lower relaxation, raise endTime), rerun |
+| interFoam | transient VOF (PIMPLE) | p_rgh (U only when momentumPredictor is on) | p_rgh `last_final` <= ~1e-6 (with the usual `p_rghFinal` relTol 0); continuity small; run completed | alpha.water is solved by MULES and prints no residual line, and the interface Courant line is not captured — phase conservation and alpha boundedness are INVISIBLE to the parser; do the multiphase-vof.md log-tail checks on the raw log |
+| potentialFoam | single-shot initializer | Phi | Phi `last_final` under its fvSolution tolerance (typically ~1e-6); `completed` true | it is a warm-up, not the simulation — never present its verdict as the run's verdict. It has no time loop, so read nothing into time progress. The default log selection follows the controlDict application (the main solver); inspect this log explicitly with `log_file="log.potentialFoam"` |
+
+## When a `converged` verdict still deserves suspicion
+
+Verify before telling the user it converged:
+
+- **Evidence says "no residual lines found in the log."** `End` was reached
+  but zero residual lines parsed — wrong log, a utility log, or an
+  unexpected format. Read the log before claiming anything.
+- **Fields you expect are missing from `residuals`** (no turbulence fields
+  on a RAS case, no p_rgh on a VOF case): the missing physics went unjudged.
+- **A steady run's initial residuals plateaued** (`last_initial` far above
+  target): the run stopped; it did not converge.
+- **`time.latest_time` barely past `time.first_time`**, or endTime reached
+  in a handful of steps: completion, not convergence — was `endTime` long
+  enough for the physics (flow-through/washout time)?
+- **`courant.max` large but under 100**: 100 is a crash detector, not a
+  health check. Transient accuracy wants max Courant around 1 or below; a
+  max of 30 "passed" mechanically and the result is still garbage.
+- **`cumulative_continuity` large relative to the field scales**, or growing
+  markedly compared with earlier runs of the same case.
+
+## Rerun longer, or call it done?
+
+- Steady, initial residuals still FALLING at the end → raise `endTime` (the
+  iteration budget) and rerun. Plateaued → a longer run wastes time; change
+  relaxation/schemes first (see the error playbook), then rerun.
+- Transient, `incomplete` with "no 'End' marker" and `latest_time` short of
+  `end_time` → crashed or still running; check `fatal_errors` and the
+  divergence evidence before rerunning. `run_case` reruns start from
+  scratch — there is no warm restart.
+- Transient, completed, but the quantity of interest is still evolving →
+  extend `endTime` and rerun (a full recompute).
+- `incomplete` with "completed, but last final residual ..." → not done: on
+  a steady run treat it as a plateau; on a transient run tighten the solver
+  tolerances (`*Final` entries) or reduce `deltaT`, then rerun.
+- Call it done when the trust rules above pass for the solver's type — and
+  report WHICH evidence you judged, not just the verdict word.
+
+Every run is recorded in `runs/ledger.md` automatically; its Result column
+is stamped from the run lifecycle. Run-history questions belong to the
+foam-runs skill.

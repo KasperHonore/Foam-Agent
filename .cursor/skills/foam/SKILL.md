@@ -112,15 +112,18 @@ unsure about a utility's usage. Write it with
    WARNING: every `run_case` call first deletes old logs and time-step
    folders — reruns always start from scratch; there is no warm restart.
 2. `status: success` means the commands exited cleanly — it does NOT mean
-   the physics is right. Always read the solver log tail
-   (`read_case_file(case_dir, "log.<solver>")`) after a "successful" run:
-   - STEADY solvers: confirm convergence (`SIMPLE solution converged`) or
-     acceptably low final residuals. Plateaued residuals = not converged:
-     see the error playbook.
-   - TRANSIENT solvers: confirm the final `Time =` reached `endTime`, time
-     directories were written (`list_case_files`), continuity errors stayed
-     small, and — for VOF — phase fraction is conserved and alpha stays
-     bounded (see references/multiphase-vof.md).
+   the physics is right. After every "successful" run call
+   `parse_solver_log(case_dir)` — typed residuals, Courant/continuity facts
+   and a verdict with evidence, computed instead of read from raw text — and
+   judge the numbers with
+   [references/convergence.md](references/convergence.md): the verdict's
+   thresholds are conservative mechanical defaults; the judgement (steady
+   initial-residual trends, per-solver targets, when `converged` still
+   deserves suspicion, rerun-longer calls) is yours. Also confirm time
+   directories were written (`list_case_files`), and for VOF cases do the
+   raw-log checks in
+   [references/multiphase-vof.md](references/multiphase-vof.md) — phase
+   conservation and alpha bounds are invisible to the parser.
 3. On failure, enter the fix loop: delegate to the **foam-debugger** subagent
    (no subagents? read
    [references/subagents/foam-debugger.md](references/subagents/foam-debugger.md)
