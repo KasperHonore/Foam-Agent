@@ -344,8 +344,10 @@ async def main():
             if ledger_row:
                 status_cell, result_cell = ledger_row[5], ledger_row[6]
                 print(f"ledger: status={status_cell} result={result_cell}")
+                # The cavity is a known-good case: anything but converged is
+                # a verdict bug (the sigFpe banner once read as a blow-up).
                 results["ledger"] = (
-                    status_cell == "done" and result_cell in ("converged", "diverged")
+                    status_cell == "done" and result_cell == "converged"
                 )
             else:
                 print(f"ledger: no row for the case in {ledger_path}")

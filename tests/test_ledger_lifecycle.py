@@ -39,9 +39,14 @@ runApplication blockMesh
 runApplication icoFoam
 """
 
-GOOD_LOG = "Time = 0.5\nEnd\n"
-INCOMPLETE_LOG = "Time = 0.1\nCourant Number max: 894.2\n"  # no End marker
-DIVERGING_LOG = "Time = 0.5\nsolution diverging\nEnd\n"  # completed but blew up
+# Every real OpenFOAM log opens with this banner — its "floating point
+# exception"/"sigFpe" words must never read as a blow-up (shakedown regression:
+# the coarse verdict stamped every successful run diverged).
+SIGFPE_BANNER = "sigFpe : Enabling floating point exception trapping (FOAM_SIGFPE).\n"
+
+GOOD_LOG = SIGFPE_BANNER + "Time = 0.5\nEnd\n"
+INCOMPLETE_LOG = SIGFPE_BANNER + "Time = 0.1\nCourant Number max: 894.2\n"  # no End marker
+DIVERGING_LOG = SIGFPE_BANNER + "Time = 0.5\nsolution diverging\nEnd\n"  # completed but blew up
 
 
 def _rows(runs_root: Path) -> list:
