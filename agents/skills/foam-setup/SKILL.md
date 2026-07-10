@@ -104,7 +104,8 @@ Re-run the health check (step 1). Then be aware of two first-use behaviors:
 - **First retrieval call** (`find_similar_case` / `search_tutorials`)
   downloads the ~1.2 GB Qwen embedding model inside the container and loads
   4 FAISS indices — expect several minutes of silence. It is NOT hung.
-  Warm it proactively with a throwaway `search_tutorials` call.
+  Warm it proactively with a throwaway call, e.g.
+  `search_tutorials(index="openfoam_tutorials_details", query="lid driven cavity")`.
 - **Execution tools** (`run_case`, `run_openfoam_command`) need OpenFOAM,
   which the container sources automatically. If they fail with
   `WM_PROJECT_DIR is not set`, the entrypoint didn't run — recreate the

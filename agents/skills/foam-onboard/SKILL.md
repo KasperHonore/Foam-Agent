@@ -32,7 +32,8 @@ The first retrieval call downloads a ~1.2 GB embedding model inside the
 container and loads 4 FAISS indices. Warn the user this is a one-time wait,
 then trigger it with a throwaway call:
 
-- `search_tutorials` with any query, e.g. `"lid driven cavity"`.
+- `search_tutorials(index="openfoam_tutorials_details", query="lid driven cavity")`
+  (the `index` argument defaults to `openfoam_tutorials_details` if omitted).
 
 If it returns results in seconds, the model was already warm — say so.
 

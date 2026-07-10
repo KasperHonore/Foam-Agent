@@ -114,8 +114,8 @@ async def get_case_stats(ctx: Context) -> Dict[str, List[str]]:
 
 @mcp.tool(name="search_tutorials")
 async def search_tutorials(
-    index: str = Field(description="FAISS index to search: 'openfoam_tutorials_structure', 'openfoam_tutorials_details', 'openfoam_allrun_scripts' or 'openfoam_command_help'"),
     query: str = Field(description="Semantic search query (e.g. 'incompressible lid driven cavity icoFoam' or a command name like 'blockMesh')"),
+    index: str = Field(default="openfoam_tutorials_details", description="FAISS index to search: 'openfoam_tutorials_structure', 'openfoam_tutorials_details' (default), 'openfoam_allrun_scripts' or 'openfoam_command_help'"),
     topk: int = Field(default=3, description="Number of results to return"),
     max_chars_per_result: int = Field(default=20000, description="Truncate each result's full_content to this many characters"),
     ctx: Context = None,
