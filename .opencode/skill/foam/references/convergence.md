@@ -28,7 +28,9 @@ is this document.** The built-in rules, in precedence order:
   non-finite, a max Courant at/above 100, or a floating point exception trap
   actually firing (the sigFpe startup banner is excluded). The evidence
   names each trigger's field, value and time — that is where diagnosis
-  starts.
+  starts. Mesh quality is a standing divergence suspect: `assess_mesh` plus
+  `references/mesh-quality.md` make "is the mesh why this diverged?" one
+  call.
 - `incomplete` — two distinct situations, told apart by the evidence:
   "no 'End' marker" (crash, timeout, or still running — compare
   `time.latest_time` with `time.end_time`), or "completed, but last final

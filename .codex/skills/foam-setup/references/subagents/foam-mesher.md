@@ -11,7 +11,8 @@ filesystem:
 
 - `run_python_script(case_dir, script, filename="generate_mesh.py", expected_output="geometry.msh")` — run your GMSH script server-side (gmsh must be importable there)
 - `run_openfoam_command(case_dir, "gmshToFoam geometry.msh")` — convert
-- `run_openfoam_command(case_dir, "checkMesh")` — validate quality
+- `assess_mesh(case_dir)` — validate quality: typed census, per-metric
+  pass/warn/fail and a verdict with evidence naming the failing metrics
 - `read_mesh_boundaries(case_dir)` — patch names after conversion
 - `read_case_file` / `write_case_file` — inspect and fix files (e.g. `constant/polyMesh/boundary`)
 
@@ -27,8 +28,15 @@ filesystem:
 4. **Verify boundaries**: `read_mesh_boundaries` must show exactly the
    expected names — no `defaultFaces`. On mismatch, fix the script (see
    failure modes) and go back to step 2.
-5. **Validate quality**: `run_openfoam_command(case_dir, "checkMesh")`. If it
-   reports "Failed N mesh checks", adjust sizing/refinement and regenerate.
+5. **Validate quality**: `assess_mesh(case_dir)`. The verdict is typed
+   (`ok` / `warnings` / `failed`) and its `evidence` names the offending
+   metrics. On `failed`, key the fix on the named metrics via the
+   quality-fix loop below, then regenerate (back to step 2) and reassess.
+   On `warnings`, judge the marginal values against the target application
+   with the foam skill's `references/mesh-quality.md` before accepting.
+   If `assess_mesh` itself errors (typed error — no mesh, checkMesh crash),
+   fall back to raw `run_openfoam_command(case_dir, "checkMesh")` and read
+   its output.
 6. **Fix patch types** in `constant/polyMesh/boundary` — gmshToFoam leaves
    every patch as `type patch;`. For 2D cases set the front/back planes to
    `type empty;` (and `physicalType empty;`). Set solid surfaces (obstacle,
@@ -73,18 +81,32 @@ Iterate up to 3 times per failure type; then report honestly what failed.
   obstacle curves + a `Threshold` field ramping from the wall size (e.g.
   D/20) to the far-field size over a chosen distance band, then
   `gmsh.model.mesh.field.setAsBackgroundMesh`. This is also the lever for
-  fixing checkMesh quality failures.
+  fixing assess_mesh geometry failures (skewness, aspect ratio).
 - `gmsh.option.setNumber('Mesh.MshFileVersion', 2.2)` for OpenFOAM
   compatibility; save as `geometry.msh`; call `gmsh.finalize()`.
 
-## checkMesh quality fixes
+## Quality-fix loop (keyed on assess_mesh metric names)
 
-High skewness → refine problem areas / adjust element sizes. Poor aspect
-ratio → smaller sizes, refinement zones. Non-orthogonality → cleaner geometry
-or structured meshing. Negative volumes → check surface orientation and
-geometry validity.
+Key every fix on the metric named in the verdict's `evidence`; the full
+which-knob-to-turn table (all metrics, with blockMesh and snappyHexMesh
+columns) is in the foam skill's `references/mesh-quality.md`. The GMSH
+column in short:
+
+- `max_skewness` → smaller characteristic length in the flagged region via
+  the Distance + Threshold size fields; enable mesh optimization.
+- `max_aspect_ratio` → shrink the gap between wall size and far-field size
+  in the Threshold field.
+- `max_non_orthogonality` → cleaner geometry, structured/transfinite meshing
+  where possible, refinement near curvature.
+- `min_volume` / `min_face_area` (zero or negative) → check surface
+  orientation and geometry validity; verify the extrusion.
+- Any metric with `check: "topology"` (`point_usage`, `number_of_regions`,
+  ...) → the mesh is malformed, not low quality: fix the script or
+  reconvert — sizing knobs will not help. (`number_of_regions` > 1 usually
+  means a stray volume or a missing/extra physical volume group.)
 
 ## Reporting
 
-Return: mesh file path, final patch list (names + types), checkMesh summary,
-and any compromises made.
+Return: mesh file path, final patch list (names + types), the assess_mesh
+verdict with the census (cells, cell types) and any warn/fail evidence, and
+any compromises made.

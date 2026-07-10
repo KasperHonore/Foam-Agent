@@ -79,6 +79,14 @@ that is not a hang.
   and follow it inline.
 - **blockMesh**: nothing to do here — `blockMeshDict` is generated in step 3
   and blockMesh runs inside Allrun.
+- **Validate the mesh** (any source): `assess_mesh(case_dir)` — typed census,
+  per-metric pass/warn/fail and a verdict with evidence — and judge marginal
+  values with [references/mesh-quality.md](references/mesh-quality.md): the
+  warn band is a conservative mechanical default; per-application judgement
+  and the which-knob-to-turn table live there. Raw `checkMesh` via
+  `run_openfoam_command` is the fallback when `assess_mesh` itself errors.
+  (blockMesh cases have no mesh until Allrun runs blockMesh in step 5 —
+  assess then if quality is in doubt.)
 
 ### 3. Generate the case files
 
