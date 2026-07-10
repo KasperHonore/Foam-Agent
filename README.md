@@ -97,6 +97,7 @@ Where slash commands exist (Claude Code), use them; everywhere else, just say it
 | `/foam-onboard` | "get me set up" / "onboard me" | Guided first-run: health check → warm-up → demo → tour |
 | `/foam <requirement>` | "simulate flow over a cylinder at Re=40" | Full pipeline: plan → generate case → run → debug loop → visualize |
 | `/foam-setup` | "the foam server isn't responding" | Doctor: diagnoses Docker/image/container/LFS and brings the server up |
+| `/foam-runs` | "list my runs" / "what happened to the dam break run?" | Run history from `runs/ledger.md`: listing, status, notes, archiving, comparisons — no log-diving |
 | — | "mesh a 2D channel with a cylinder using gmsh" | foam-mesher subagent: GMSH → gmshToFoam → checkMesh |
 | — | "plot the velocity field of the last run" | foam-visualizer subagent: headless PyVista → PNG |
 
@@ -118,7 +119,7 @@ Where slash commands exist (Claude Code), use them; everywhere else, just say it
   DEBUG       foam-debugger: diagnose → rewrite → rerun (until converged)
 ```
 
-Every simulation lands in its own directory under `runs/`, with full logs.
+Every simulation lands in its own directory under `runs/`, with full logs — and gets a row in `runs/ledger.md`, the run ledger the server maintains automatically (ask "list my runs", or `python scripts/runs.py` for a zero-token check).
 
 ## Updating
 
@@ -140,7 +141,7 @@ docker rm -f foamagent-mcp && docker run -d --name foamagent-mcp --restart unles
 ```
 Foam-Agent/
 ├── agents/               # CANONICAL skills + subagents (edit here)
-│   ├── skills/           #   foam, foam-setup, foam-onboard
+│   ├── skills/           #   foam, foam-setup, foam-onboard, foam-runs
 │   └── subagents/        #   foam-debugger, foam-mesher, foam-visualizer
 ├── .claude/ .cursor/ .codex/ .opencode/ .pi/   # generated per-CLI copies + MCP configs
 ├── src/mcp/              # the FastMCP server (the "hands")
@@ -162,6 +163,7 @@ Canonical definitions live in [`agents/`](agents) and are fanned out to every to
 | `foam` skill | End-to-end orchestration: plan → generate case → run → debug loop → visualize, with reference docs on v10 conventions, file generation, multiphase/VOF, Allrun rules, error playbook, SLURM |
 | `foam-onboard` skill | Guided first-run: health check → warm-up → demo simulation → tour |
 | `foam-setup` skill | Preflight/doctor for the server |
+| `foam-runs` skill | Conversational run history over `runs/ledger.md`: listing, status, notes, archiving, cross-run comparison (writes only via `set_run_note`) |
 | `foam-debugger` subagent | Owns the diagnose → rewrite → rerun loop |
 | `foam-mesher` subagent | GMSH mesh generation → gmshToFoam → checkMesh |
 | `foam-visualizer` subagent | Headless PyVista rendering |

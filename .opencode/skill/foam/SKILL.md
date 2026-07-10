@@ -130,6 +130,11 @@ unsure about a utility's usage. Write it with
    error repeats.
 4. Report success/failure honestly, with the failing log excerpts if any.
 
+Every run is recorded automatically in `runs/ledger.md` (the run ledger) —
+no bookkeeping on your side. For run-history questions ("list my runs",
+"what happened to X?") follow the **foam-runs** skill instead of re-reading
+logs.
+
 ### 6. HPC execution (only if the user asks for cluster/SLURM)
 
 Follow [references/hpc-slurm.md](references/hpc-slurm.md): write a SLURM script
