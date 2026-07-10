@@ -64,7 +64,8 @@ Close by telling the user, in your own words:
   `examples/` (copy to the repo root and edit — root copies are gitignored).
 - **How updates work**: `git pull` + `docker pull ghcr.io/kasperhonore/foamagent:latest`
   (then recreate the container). Their runs, prompts, meshes and local agent
-  settings are gitignored and never touched.
+  settings are gitignored and never touched. Recreating the container also
+  repairs `runs/` file ownership left behind by older root-user images.
 - **When things break**: `python scripts/doctor.py` or the `foam-setup`
   skill; failed runs are auto-debugged by the foam-debugger loop.
 - **What it targets**: Foundation OpenFOAM v10 conventions (ESI only via

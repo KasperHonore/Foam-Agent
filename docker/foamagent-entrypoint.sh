@@ -1,6 +1,23 @@
 #!/bin/bash
 set -e
 
+# ---------------------------------------------------------------------------
+# Ownership repair + privilege drop. The image starts this entrypoint as root
+# so it can repair runs/ files left root-owned by pre-non-root images — those
+# are read-only to the runtime user and break write_case_file (#16). It then
+# re-execs itself as the non-root 'openfoam' user (OpenFOAM refuses codeStream
+# compilation as root; see the Dockerfile USER note), so everything below this
+# block runs exactly as it did before.
+# ---------------------------------------------------------------------------
+if [ "$(id -u)" = "0" ]; then
+    if [ -d "$FoamAgent_PATH/runs" ]; then
+        find "$FoamAgent_PATH/runs" ! -user openfoam -exec chown openfoam:openfoam {} + 2>/dev/null \
+            || echo "[entrypoint] WARNING: could not repair runs/ ownership (non-chown-capable mount?)." >&2
+    fi
+    export HOME=/home/openfoam
+    exec setpriv --reuid=openfoam --regid=openfoam --init-groups "$0" "$@"
+fi
+
 # Source OpenFOAM environment in a controlled way: allow non-zero RC, then validate
 set +e
 source /opt/openfoam10/etc/bashrc

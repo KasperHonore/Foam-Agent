@@ -138,3 +138,4 @@ execution tools require `WM_PROJECT_DIR`.
 | First retrieval takes minutes | Embedding model download — wait, don't restart |
 | `WM_PROJECT_DIR is not set` | Entrypoint bypassed → recreate container (step 4) |
 | Port 7860 in use | Republish another port + update all committed MCP configs |
+| `write_case_file`: `Permission denied` on an existing `runs/<case>` | Root-owned files left by a pre-non-root image → recreate the container from `:latest` (entrypoint repairs ownership at startup), or `docker exec -u root foamagent-mcp chown -R openfoam:openfoam /home/openfoam/Foam-Agent/runs` |

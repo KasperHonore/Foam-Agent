@@ -69,3 +69,25 @@ def test_search_tutorials_index_defaults_to_tutorials_details():
     fn = getattr(fs.search_tutorials, "fn", fs.search_tutorials)
     param = inspect.signature(fn).parameters["index"]
     assert param.default.default == "openfoam_tutorials_details"
+
+
+# ---------------------------------------------------------------------------
+# write_case_file
+# ---------------------------------------------------------------------------
+
+def test_write_case_file_permission_error_is_actionable(tmp_path, monkeypatch):
+    # Stale root-owned case dirs (left by pre-non-root images) surface as bare
+    # EACCES; the tool must translate that into an actionable message (#16).
+    import asyncio
+
+    def deny(path, content):
+        raise PermissionError(13, "Permission denied", path)
+
+    monkeypatch.setattr(fs.mechanics, "save_file", deny)
+    fn = getattr(fs.write_case_file, "fn", fs.write_case_file)
+    with pytest.raises(PermissionError, match="chown -R openfoam:openfoam"):
+        asyncio.run(fn(
+            case_dir=str(tmp_path),
+            relative_path="system/controlDict",
+            content="x",
+        ))
