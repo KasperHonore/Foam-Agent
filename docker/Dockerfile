@@ -57,7 +57,10 @@ COPY --chown=openfoam:openfoam . $FoamAgent_PATH
 # The stamp lives outside the bind mounts and the self-update tree, so it
 # always says what this image was BUILT from, and a release build from a
 # tagged checkout carries that release's version with no extra step.
-RUN sed -n 's/^version = "\(.*\)"$/\1/p' "$FoamAgent_PATH/pyproject.toml" \
+# tr strips CRs first: a Windows checkout gives pyproject.toml CRLF endings,
+# which would defeat the $-anchored sed match (caught in the live shakedown).
+RUN tr -d '\r' < "$FoamAgent_PATH/pyproject.toml" \
+        | sed -n 's/^version = "\(.*\)"$/\1/p' \
         | head -n 1 > /etc/foamagent-version \
     && test -s /etc/foamagent-version
 
