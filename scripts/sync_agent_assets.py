@@ -11,7 +11,6 @@ Generated targets:
     .opencode/skill/<name>/     OpenCode skills
     .opencode/agent/<name>.md   OpenCode agents (mode: subagent)
     .codex/skills/<name>/       Codex skills
-    .pi/skills/<name>/          pi skills
     .cursor/rules/foamagent-skills.mdc   Cursor pointer rule
 
 Every deployed skill also gets the subagent definitions copied into
@@ -48,7 +47,6 @@ SKILL_DIR_TARGETS = [
     ".claude/skills",
     ".opencode/skill",
     ".codex/skills",
-    ".pi/skills",
     ".cursor/skills",
 ]
 

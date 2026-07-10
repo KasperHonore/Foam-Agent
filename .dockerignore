@@ -14,7 +14,6 @@ agents/
 .codex/
 .cursor/
 .opencode/
-.pi/
 .github/
 .pytest_cache/
 docs/

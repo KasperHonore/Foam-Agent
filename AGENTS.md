@@ -1,13 +1,13 @@
 # AGENTS.md
 
-> This file helps AI agents (Codex, Cursor, Claude Code, OpenCode, pi, Copilot, etc.) understand and work with this codebase.
+> This file helps AI agents (Codex, Cursor, Claude Code, OpenCode, Copilot, etc.) understand and work with this codebase.
 
 ## What is Foam-Agent?
 
 Foam-Agent automates CFD (Computational Fluid Dynamics) simulations in **Foundation OpenFOAM v10** ([openfoam.org](https://openfoam.org)) from natural language prompts. The architecture is "brain out, hands in":
 
 - **The `foamagent` MCP server** (this repo) is the *hands*: key-free mechanical tools — FAISS tutorial retrieval (local embeddings), case file I/O, OpenFOAM execution, error extraction, PyVista/GMSH script execution, SLURM. No LLM provider needed.
-- **Skills and subagents under `agents/`** are the *brain-guidance*: they run on YOUR agent harness's model (Claude Code, Cursor, Codex, OpenCode, pi, ...) and orchestrate the MCP tools.
+- **Skills and subagents under `agents/`** are the *brain-guidance*: they run on YOUR agent harness's model (Claude Code, Cursor, Codex, OpenCode, ...) and orchestrate the MCP tools.
 
 Nothing in this repo needs an LLM API key. (The original self-contained LangGraph pipeline was removed from `main`; it is preserved at the `legacy-pipeline` git tag for benchmarking.)
 
@@ -16,7 +16,7 @@ Nothing in this repo needs an LLM API key. (The original self-contained LangGrap
 ## Skills, subagents, and MCP registration
 
 - **Canonical sources (edit these):** `agents/skills/<name>/SKILL.md` (+ `references/`) and `agents/subagents/<name>.md`.
-- **Generated copies (do NOT edit):** `.claude/skills`, `.claude/agents`, `.opencode/skill`, `.opencode/agent`, `.codex/skills`, `.pi/skills`, `.cursor/skills`, `.cursor/rules/foamagent-skills.mdc`. Regenerate with `python scripts/sync_agent_assets.py` (CI runs `--check`).
+- **Generated copies (do NOT edit):** `.claude/skills`, `.claude/agents`, `.opencode/skill`, `.opencode/agent`, `.codex/skills`, `.cursor/skills`, `.cursor/rules/foamagent-skills.mdc`. Regenerate with `python scripts/sync_agent_assets.py` (CI runs `--check`).
 - **MCP registration is committed per tool:** `.mcp.json` (Claude Code), `.cursor/mcp.json`, `opencode.json`, `.codex/config.toml` — all pointing at `http://localhost:7860/mcp` (start it with Docker, see `src/mcp/README.md`).
 - **Universal fallback:** if your tool auto-discovers none of the above, read `agents/skills/foam/SKILL.md` when the user asks for a CFD simulation and follow it; subagent roles are in `agents/subagents/` — follow them inline.
 - **Server not responding?** Follow `agents/skills/foam-setup/SKILL.md` — it diagnoses and starts the Dockerized MCP server (no API key needed). `python scripts/doctor.py` runs the same checks deterministically (read-only, prints fix commands).
@@ -100,7 +100,7 @@ python init_database.py --openfoam_path $WM_PROJECT_DIR --force
 
 - **Do not regenerate FAISS indices** unless you have a specific reason. The pre-built indices in `database/faiss/` are correct and ready to use.
 - **Foundation OpenFOAM v10 must be sourced** for any simulation execution. Without `$WM_PROJECT_DIR`, execution tools will fail. ESI OpenFOAM is not compatible.
-- **Never edit generated skill copies** (`.claude/`, `.cursor/`, `.codex/`, `.opencode/`, `.pi/`) — edit `agents/` and run `python scripts/sync_agent_assets.py`; CI fails on drift.
+- **Never edit generated skill copies** (`.claude/`, `.cursor/`, `.codex/`, `.opencode/`) — edit `agents/` and run `python scripts/sync_agent_assets.py`; CI fails on drift.
 
 ## Agent skills
 

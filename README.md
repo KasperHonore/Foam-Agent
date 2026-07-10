@@ -9,14 +9,13 @@
     <img src="https://img.shields.io/badge/Cursor-supported-000000" alt="Cursor">
     <img src="https://img.shields.io/badge/Codex-supported-10A37F" alt="Codex">
     <img src="https://img.shields.io/badge/OpenCode-supported-F5A623" alt="OpenCode">
-    <img src="https://img.shields.io/badge/pi-supported-4A90D9" alt="pi">
     <img src="https://img.shields.io/badge/API_keys-none_required-2EA44F" alt="No API keys">
 </p>
 
 **Foam-Agent** automates the entire **Foundation OpenFOAM v10** CFD workflow — meshing, case setup, execution, error correction, post-processing — from a single natural language prompt. This fork of [csml-rpi/Foam-Agent](https://github.com/csml-rpi/Foam-Agent) restructures it around a **"brain out, hands in"** architecture:
 
 ```
-Your agent harness            Claude Code / Cursor / Codex / OpenCode / pi
+Your agent harness            Claude Code / Cursor / Codex / OpenCode
 (the BRAIN — its model        guided by portable skills + subagents in agents/
  does the CFD reasoning)
         │  MCP (HTTP)
@@ -39,7 +38,7 @@ The intelligence comes from the AI subscription you already pay for. The contain
 | 🕸️ | **GMSH meshing** — geometry described in words becomes a validated `constant/polyMesh` |
 | 🖼️ | **PyVista post-processing** — headless field rendering to PNG |
 | 🖥️ | **HPC/SLURM** — job submission and polling for cluster runs |
-| 🔌 | **5 CLIs, one repo** — MCP registration and skills committed for Claude Code, Cursor, Codex, OpenCode, and pi |
+| 🔌 | **4 CLIs, one repo** — MCP registration and skills committed for Claude Code, Cursor, Codex, and OpenCode |
 | 🔒 | **Key-free server** — the Docker container needs no LLM provider; your harness brings the model |
 | 🧾 | **Update contract** — `git pull` and `docker pull` never touch your simulations, prompts, meshes, or local settings |
 
@@ -61,7 +60,7 @@ docker run -d --name foamagent-mcp --restart unless-stopped -p 7860:7860 \
 **2. Open the repo in your AI CLI and let it finish the setup** — no manual file editing:
 
 ```bash
-claude   # or cursor / codex / opencode / pi
+claude   # or cursor / codex / opencode
 ```
 
 ```
@@ -143,7 +142,7 @@ Foam-Agent/
 ├── agents/               # CANONICAL skills + subagents (edit here)
 │   ├── skills/           #   foam, foam-setup, foam-onboard, foam-runs
 │   └── subagents/        #   foam-debugger, foam-mesher, foam-visualizer
-├── .claude/ .cursor/ .codex/ .opencode/ .pi/   # generated per-CLI copies + MCP configs
+├── .claude/ .cursor/ .codex/ .opencode/        # generated per-CLI copies + MCP configs
 ├── src/mcp/              # the FastMCP server (the "hands")
 ├── src/                  # mechanics.py (mechanical layer) + ESI translation
 ├── database/faiss/       # pre-built tutorial indices (git-lfs)
@@ -156,7 +155,7 @@ Foam-Agent/
 
 ## Skills and subagents
 
-Canonical definitions live in [`agents/`](agents) and are fanned out to every tool's native location (`.claude/`, `.cursor/`, `.codex/`, `.opencode/`, `.pi/`) by `python scripts/sync_agent_assets.py` — edit the canonical files, never the generated copies.
+Canonical definitions live in [`agents/`](agents) and are fanned out to every tool's native location (`.claude/`, `.cursor/`, `.codex/`, `.opencode/`) by `python scripts/sync_agent_assets.py` — edit the canonical files, never the generated copies.
 
 | Asset | Role |
 |---|---|

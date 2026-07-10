@@ -10,7 +10,7 @@ The MCP server (src/mcp/fastmcp_server.py) exposes these functions as
 tools. The reasoning that used to be LLM calls inside this repo now
 lives in the portable skills/subagents under agents/ and runs on
 whatever agent harness the user already has (Claude Code, Cursor,
-Codex, OpenCode, pi, ...).
+Codex, OpenCode, ...).
 
 Diagnostics are printed to stderr so the module is safe to import from
 a stdio MCP server (stdout is the protocol channel).
