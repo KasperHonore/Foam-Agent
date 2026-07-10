@@ -43,15 +43,30 @@ def _row(runs_root: Path, case: str) -> dict:
     return next(r for r in _rows(runs_root) if r["case"] == case)
 
 
+# Parser-realistic converged solver log (prior art: test_ledger_lifecycle.py):
+# genuine banner plus real v10 residual/time lines, so the done path's
+# parse_solver_log verdict (issue #40) lands converged.
+_CONVERGED_LOG = """\
+sigFpe : Enabling floating point exception trapping (FOAM_SIGFPE).
+Time = 0.5s
+
+Courant Number mean: 0.222158 max: 0.852134
+smoothSolver:  Solving for Ux, Initial residual = 2.3091e-07, Final residual = 2.3091e-07, No Iterations 0
+DICPCG:  Solving for p, Initial residual = 8.63844e-07, Final residual = 8.63844e-07, No Iterations 0
+End
+"""
+
+
 def _make_done_run(runs_root, monkeypatch, name="cavity") -> None:
     """Drive a case through the real lifecycle to done/converged (prior art:
     test_ledger_lifecycle.py's fake solver at the subprocess boundary)."""
     case_dir = mechanics.resolve_case_dir(name, run_directory=str(runs_root))
-    Path(case_dir).mkdir(parents=True)
+    (Path(case_dir) / "system").mkdir(parents=True)
+    (Path(case_dir) / "system" / "controlDict").write_text("application     icoFoam;\n")
     (Path(case_dir) / "Allrun").write_text("#!/bin/sh\nrunApplication icoFoam\n")
 
     def _fake_run_sourced(command, cwd, timeout):
-        (Path(cwd) / "log.icoFoam").write_text("Time = 0.5\nEnd\n")
+        (Path(cwd) / "log.icoFoam").write_text(_CONVERGED_LOG)
         return 0, "", "", False
 
     monkeypatch.setattr(mechanics, "_run_sourced", _fake_run_sourced)

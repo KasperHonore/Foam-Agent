@@ -390,35 +390,30 @@ def _inspect_mesh(case_dir: str) -> str:
     return "+".join(found) if found else ledger.PLACEHOLDER
 
 
-# Result verdict v1 markers: a log line containing any of these blew up even
-# if the solver ran to completion. Deliberately coarse (spec #28) — the
-# solver-log convergence parser (next spec) upgrades this verdict.
-_DIVERGENCE_MARKERS = ("diverg", "floating point exception", "sigfpe")
-# ...but every OpenFOAM log opens with the trap-setup banner
-# "sigFpe : Enabling floating point exception trapping (FOAM_SIGFPE)." —
-# lines announcing the trap are not evidence of a blow-up.
-_BANNER_MARKER = "enabling floating point exception trapping"
+def _parsed_result(case_dir: str) -> str:
+    """Result verdict for the done path, from the convergence parser (#40).
 
+    Verdict -> Result mapping (decided in spec #38): Result is 'converged'
+    if and only if the parser verdict is 'converged'; ANY other verdict maps
+    to 'diverged' — that covers 'diverged' itself and the 'incomplete'
+    flavor meaning "completed but final residuals above threshold".
+    Conservative by design: the ledger must never overstate trust, and the
+    run's typed evidence stays one parse_solver_log call away for anyone
+    asking why. ('error' and the no-End 'incomplete' cannot reach the done
+    path: check_foam_errors already gates it to the debugging path.)
 
-def _coarse_result(case_dir: str) -> str:
-    """Result verdict, v1 (deliberately coarse — spec #28).
-
-    Only called after check_foam_errors came back clean, so the run's exit
-    status already says success (no ERROR: lines, every log reached its End
-    marker). The basic log check downgrades the verdict to 'diverged' when
-    a log still shows a blow-up marker; otherwise 'converged'. The
-    solver-log convergence parser (next spec) will upgrade this fidelity —
-    the run-states.yml Result vocabulary is the interface it must satisfy.
+    A log the parser cannot locate or read (no controlDict application
+    entry, missing log file) gets the same conservative 'diverged' — an
+    unverifiable run is never presented as trusted.
     """
-    for file in os.listdir(case_dir):
-        if not file.startswith("log"):
-            continue
-        for line in read_file(os.path.join(case_dir, file)).lower().splitlines():
-            if _BANNER_MARKER in line:
-                continue
-            if any(marker in line for marker in _DIVERGENCE_MARKERS):
-                return "diverged"
-    return "converged"
+    # Lazy import: convergence imports mechanics at module top (it reuses
+    # _inspect_solver), so a top-level import here would be a cycle — same
+    # precedent as the lazy FAISS imports below.
+    import convergence
+    try:
+        return "converged" if convergence.parse_solver_log(case_dir).verdict == "converged" else "diverged"
+    except (OSError, ValueError):
+        return "diverged"
 
 
 def run_allrun_and_collect_errors(
@@ -430,9 +425,10 @@ def run_allrun_and_collect_errors(
     """Execute the Allrun script and return any error logs (empty = success).
 
     Ledger side effect (server-owned, spec #28): the case's row follows the
-    run — running while Allrun is in flight, then done plus a coarse Result
-    verdict on success, or debugging (Result pending) on failure. A missing
-    Allrun script never started a run, so the row is left untouched.
+    run — running while Allrun is in flight, then done plus a Result stamped
+    from the convergence parser's verdict (#40) on success, or debugging
+    (Result pending) on failure. A missing Allrun script never started a
+    run, so the row is left untouched.
     """
     allrun_file_path = os.path.join(case_dir, "Allrun")
     if not os.path.exists(allrun_file_path):
@@ -457,7 +453,7 @@ def run_allrun_and_collect_errors(
 
         error_logs = check_foam_errors(case_dir)
         if len(error_logs) == 0:
-            ledger.track_done(runs_root, case_dir, _coarse_result(case_dir))
+            ledger.track_done(runs_root, case_dir, _parsed_result(case_dir))
             return []
 
         last_error_logs = error_logs
@@ -830,8 +826,9 @@ def check_job_status(job_id: str) -> Tuple[Optional[str], bool, str]:
 
     Ledger side effect (server-owned, spec #28): observing a terminal state
     of a job submitted through submit_slurm_job stamps its row exactly like
-    a local run — done plus the coarse Result when the case logs are clean,
-    debugging when they are not or the scheduler reports a failure state.
+    a local run — done plus the parser-backed Result (#40) when the case
+    logs are clean, debugging when they are not or the scheduler reports a
+    failure state.
     """
     try:
         result = subprocess.run(
@@ -859,7 +856,7 @@ def _stamp_slurm_outcome(job_id: str, status: str) -> None:
         if check_foam_errors(case_dir):
             ledger.track_failed(runs_root, case_dir)
         else:
-            ledger.track_done(runs_root, case_dir, _coarse_result(case_dir))
+            ledger.track_done(runs_root, case_dir, _parsed_result(case_dir))
     elif status in _SLURM_FAILED_STATES:
         ledger.track_failed(runs_root, case_dir)
     else:
