@@ -7,6 +7,11 @@ name: Publish Docker image
 #   ghcr.io/<owner>/foamagent:latest    — every push to main that touches the image
 #   ghcr.io/<owner>/foamagent:vX.Y.Z    — on published releases
 #   ghcr.io/<owner>/foamagent:sha-<sha> — always, for pinning
+#
+# Version stamp: docker/Dockerfile bakes /etc/foamagent-version from the
+# checked-out pyproject.toml (scripts/doctor.py's lockstep check reads it via
+# docker exec), so a release build is stamped with that release's version
+# automatically — no extra step in this workflow.
 
 on:
   push:

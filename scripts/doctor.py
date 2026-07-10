@@ -9,7 +9,20 @@ Usage:
     python scripts/doctor.py
     python scripts/doctor.py --json    # machine-readable output
 
-Exit code 0 when the MCP server is reachable, 1 otherwise.
+Green is the install contract (spec #29): exit code 0 when every hard check
+passes — warnings never gate. Hard checks include the version lockstep
+(clone pyproject.toml vs the image's baked /etc/foamagent-version stamp,
+issue #48) and the runs/ mount source matching this clone (issue #26).
+
+The --json output also carries `onboardingNeeded`: true only on first-run
+signals — no seeded config/user.yml AND no rows in runs/ledger.md. The
+onboarding skill branches on it.
+
+Env overrides (config knobs, and the faked boundary in the CLI tests):
+    FOAMAGENT_MCP_URL       MCP endpoint  (default http://localhost:7860/mcp)
+    FOAMAGENT_RELEASES_URL  release feed  (default the GitHub releases API)
+
+Stays key-free, stdlib-only, ASCII-output.
 """
 
 from __future__ import annotations
@@ -17,6 +30,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -24,7 +38,16 @@ import urllib.request
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-MCP_URL = "http://localhost:7860/mcp"
+sys.path.insert(0, str(REPO / "src"))
+import ledger  # noqa: E402  (stdlib-only, ships with the clone)
+
+# Env overrides double as config knobs and as the faked boundary in the CLI
+# tests (tests/test_doctor_unit.py) -- both accept file:// URLs.
+MCP_URL = os.environ.get("FOAMAGENT_MCP_URL", "http://localhost:7860/mcp")
+RELEASES_URL = os.environ.get(
+    "FOAMAGENT_RELEASES_URL",
+    "https://api.github.com/repos/KasperHonore/Foam-Agent/releases?per_page=1",
+)
 
 PULL_CMDS = (
     "docker pull ghcr.io/kasperhonore/foamagent:latest\n"
@@ -36,6 +59,30 @@ RUN_CMD = (
     f'    -v "{REPO / "runs"}:{RUNS_MOUNT_DST}" \\\n'
     "    foamagent:latest python -m src.mcp.fastmcp_server --transport http --host 0.0.0.0 --port 7860"
 )
+
+# Version stamp contract (issue #48): the single source of truth is
+# [project].version in pyproject.toml. docker/Dockerfile bakes that value
+# into the image at build time as /etc/foamagent-version, so the doctor can
+# compare clone vs image with one cheap `docker exec`. The release workflow
+# inherits the stamp for free: any image built from a tagged checkout
+# carries that tag's pyproject version.
+VERSION_STAMP_PATH = "/etc/foamagent-version"
+LOCKSTEP_FIX = (
+    "update both sides to the same version, then recreate the container:\n"
+    "  git pull\n"
+    f"  {PULL_CMDS}\n"
+    f"  docker rm -f foamagent-mcp && {RUN_CMD}"
+)
+
+
+def product_version() -> str | None:
+    """The clone's version, read from the packaging manifest."""
+    try:
+        text = (REPO / "pyproject.toml").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    match = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
+    return match.group(1) if match else None
 
 
 class Check:
@@ -107,18 +154,179 @@ def check_container(docker: str) -> Check:
     return Check("foamagent-mcp container", True, status)
 
 
+def check_version_lockstep(docker: str) -> Check:
+    """Clone and image must carry the same version stamp (issue #48).
+
+    Skills (the clone) and the container image travel separately; silent
+    drift between them is the version-mismatch bug class the product exists
+    to prevent, so a mismatch is a hard failure.
+    """
+    product = product_version()
+    if product is None:
+        return Check("version lockstep", False,
+                     "could not read the product version from pyproject.toml", warn=True)
+    code, out = _run([docker, "exec", "foamagent-mcp", "cat", VERSION_STAMP_PATH])
+    # _run concatenates stdout+stderr; the stamp is stdout's (single) first line
+    stamp = out.strip().splitlines()[0].strip() if out.strip() else ""
+    if code != 0 or not stamp:
+        return Check("version lockstep", False,
+                     f"image carries no version stamp ({VERSION_STAMP_PATH} missing -- "
+                     "built before the stamp mechanism)",
+                     PULL_CMDS, warn=True)
+    if stamp != product:
+        return Check("version lockstep", False,
+                     f"clone is {product} but the running image is {stamp} -- "
+                     "skills and container have drifted out of lockstep",
+                     LOCKSTEP_FIX)
+    return Check("version lockstep", True, f"clone {product} == image {stamp}")
+
+
+def _canonical_mount_path(raw: str) -> str | None:
+    """Best-effort canonical form of a mount path for comparison.
+
+    Docker reports the same host directory in several spellings (backslashes,
+    \\\\?\\ long-path prefixes, Docker Desktop's /run/desktop/mnt/host/c/...,
+    WSL's /mnt/c/...); fold them all to one form. Drive-letter paths are
+    casefolded (Windows filesystems are case-insensitive). Returns None for
+    values that are not absolute paths at all (e.g. named volumes) -- those
+    are not comparable.
+    """
+    path = raw.strip().replace("\\", "/")
+    for prefix in ("//?/", "//./"):
+        if path.startswith(prefix):
+            path = path[len(prefix):]
+    m = re.match(r"^/(?:run/desktop/mnt/host|host_mnt|mnt/host|mnt)/([A-Za-z])(/.*)?$", path)
+    if m:
+        path = f"{m.group(1)}:{m.group(2) or '/'}"
+    if len(path) > 1:
+        path = path.rstrip("/")
+    if re.match(r"^[A-Za-z]:(/|$)", path):
+        return path.casefold()
+    if path.startswith("/"):
+        return path
+    return None
+
+
 def check_runs_mount(docker: str) -> Check:
-    """Without the runs/ bind mount, results are lost on container recreation."""
-    code, out = _run([docker, "inspect", "foamagent-mcp",
-                      "--format", "{{range .Mounts}}{{.Destination}};{{end}}"])
-    if code != 0:
+    """runs/ must be bind-mounted from THIS clone's runs directory.
+
+    Without the mount, results are lost on container recreation; mounted
+    from a different clone (issue #26), every run lands in the wrong
+    repository -- so a wrong source is a hard failure, while an
+    uncomparable source is only a warning.
+    """
+    recreate = f"docker rm -f foamagent-mcp && {RUN_CMD}"
+    code, out = _run([docker, "inspect", "foamagent-mcp", "--format", "{{json .Mounts}}"])
+    try:
+        # _run concatenates stdout+stderr; the JSON is stdout's first line
+        mounts = json.loads(out.strip().splitlines()[0]) if out.strip() else []
+    except json.JSONDecodeError:
+        mounts = None
+    if code != 0 or not isinstance(mounts, list):
         return Check("runs/ mount", False, "could not inspect container mounts", warn=True)
-    if RUNS_MOUNT_DST not in out.split(";"):
+    mount = next((m for m in mounts if m.get("Destination") == RUNS_MOUNT_DST), None)
+    if mount is None:
         return Check("runs/ mount", False,
-                     "container has no runs/ bind mount — simulation results will be "
+                     "container has no runs/ bind mount -- simulation results will be "
                      "lost when the container is recreated",
-                     f"docker rm -f foamagent-mcp && {RUN_CMD}", warn=True)
-    return Check("runs/ mount", True, f"{RUNS_MOUNT_DST} bind-mounted from the clone")
+                     recreate, warn=True)
+    expected_runs = str((REPO / "runs").resolve())
+    source = str(mount.get("Source") or "")
+    canonical_source = _canonical_mount_path(source)
+    if canonical_source is None:
+        return Check("runs/ mount", False,
+                     f"could not compare the mount source ({source or 'unknown'}) "
+                     f"against this clone's runs directory ({expected_runs})",
+                     warn=True)
+    if canonical_source != _canonical_mount_path(expected_runs):
+        return Check("runs/ mount", False,
+                     f"container mounts runs/ from a DIFFERENT clone: {source} "
+                     f"instead of {expected_runs} -- simulations would land in the "
+                     "wrong repository (issue #26)",
+                     recreate)
+    return Check("runs/ mount", True,
+                 f"{RUNS_MOUNT_DST} bind-mounted from this clone ({source})")
+
+
+def _version_tuple(version: str) -> tuple[int, ...] | None:
+    match = re.match(r"v?(\d+(?:\.\d+)*)", version.strip())
+    return tuple(int(p) for p in match.group(1).split(".")) if match else None
+
+
+def check_release() -> Check | None:
+    """Notify-only release check (issue #48): reports a newer upstream
+    release, never applies anything, and degrades to a silent skip when
+    offline, rate-limited, or when no releases exist (none do today)."""
+    product = product_version()
+    if product is None:
+        return None
+    req = urllib.request.Request(RELEASES_URL, headers={
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "foamagent-doctor",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except Exception:  # noqa: BLE001 -- ANY failure means silent skip, by design
+        return None
+    if isinstance(data, dict):  # a /releases/latest-style single object
+        data = [data]
+    if not isinstance(data, list) or not data:
+        return None
+    tag = str(data[0].get("tag_name") or "") if isinstance(data[0], dict) else ""
+    latest, current = _version_tuple(tag), _version_tuple(product)
+    if latest is None or current is None:
+        return None
+    if latest > current:
+        return Check("release check", False,
+                     f"a newer release {tag} is available (installed: {product}) -- "
+                     "notify only, nothing has been changed",
+                     LOCKSTEP_FIX, warn=True)
+    return Check("release check", True, f"installed {product}, latest release {tag}")
+
+
+def check_host_openfoam() -> Check | None:
+    """Detect-and-name for ESI OpenFOAM installs (openfoam.com), issue #48.
+
+    A sourced OpenFOAM environment leaves WM_PROJECT_DIR/WM_PROJECT_VERSION
+    in the shell; ESI releases are calendar-versioned (v2312 etc.) where
+    Foundation's are plain integers. No host install at all is the common
+    case and reports nothing.
+    """
+    wm_dir = os.environ.get("WM_PROJECT_DIR", "")
+    if not wm_dir:
+        return None
+    wm_version = os.environ.get("WM_PROJECT_VERSION", "")
+    dir_hint = wm_dir.replace("\\", "/").lower()
+    is_esi = bool(re.match(r"v\d{4}", wm_version)) \
+        or "openfoam.com" in dir_hint \
+        or re.search(r"openfoam-?v?\d{4}", dir_hint)
+    if is_esi:
+        return Check("host OpenFOAM", False,
+                     f"ESI OpenFOAM (openfoam.com) {wm_version or wm_dir} detected on "
+                     "this machine; Foam-Agent targets Foundation OpenFOAM v10 "
+                     "(openfoam.org), which the container provides -- generated cases "
+                     "use Foundation dictionaries",
+                     "nothing to change for container runs; to adapt a generated case "
+                     "to your ESI install, use the translate_case_to_esi tool "
+                     "(best-effort translation)",
+                     warn=True)
+    return Check("host OpenFOAM", True,
+                 f"Foundation OpenFOAM {wm_version or wm_dir} on host; the container "
+                 "provides the pinned v10 toolchain either way")
+
+
+def onboarding_needed() -> bool:
+    """First-run signal for the onboarding skill (spec #29).
+
+    True only when both first-run signals are present: no seeded
+    user-preferences file (config/user.yml, template-seeded during
+    onboarding) and no prior runs in the ledger (no runs/ledger.md, or one
+    with zero rows).
+    """
+    if (REPO / "config" / "user.yml").is_file():
+        return False
+    return not ledger.read_rows(str(REPO / "runs"))
 
 
 def check_endpoint() -> Check:
@@ -152,13 +360,25 @@ def main() -> int:
             container = check_container(docker)
             checks.append(container)
             if container.ok:
+                checks.append(check_version_lockstep(docker))
                 checks.append(check_runs_mount(docker))
+    host_openfoam = check_host_openfoam()
+    if host_openfoam is not None:
+        checks.append(host_openfoam)
     checks.append(check_endpoint())
+    release = check_release()
+    if release is not None:
+        checks.append(release)
 
-    healthy = checks[-1].ok
+    # Green = the install contract holds: every hard check passes (warns
+    # never gate). A lockstep or wrong-clone-mount failure is red even
+    # while the endpoint answers.
+    healthy = all(c.ok or c.warn for c in checks)
 
     if args.json:
-        print(json.dumps({"healthy": healthy, "checks": [vars(c) for c in checks]}, indent=2))
+        print(json.dumps({"healthy": healthy,
+                          "onboardingNeeded": onboarding_needed(),
+                          "checks": [vars(c) for c in checks]}, indent=2))
         return 0 if healthy else 1
 
     print("Foam-Agent doctor\n" + "=" * 17)

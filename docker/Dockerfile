@@ -50,6 +50,17 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 ENV FoamAgent_PATH=/home/openfoam/Foam-Agent
 COPY --chown=openfoam:openfoam . $FoamAgent_PATH
 
+# Version stamp (the doctor's lockstep contract, issue #48). The single source
+# of truth is [project].version in pyproject.toml; baking it here lets
+# scripts/doctor.py compare clone vs image with one cheap
+#   docker exec foamagent-mcp cat /etc/foamagent-version
+# The stamp lives outside the bind mounts and the self-update tree, so it
+# always says what this image was BUILT from, and a release build from a
+# tagged checkout carries that release's version with no extra step.
+RUN sed -n 's/^version = "\(.*\)"$/\1/p' "$FoamAgent_PATH/pyproject.toml" \
+        | head -n 1 > /etc/foamagent-version \
+    && test -s /etc/foamagent-version
+
 # Interactive shells: OpenFOAM env + venv on PATH + land in the project.
 # Target the openfoam user's bashrc since that's the runtime user.
 RUN echo '' >> /home/openfoam/.bashrc \
