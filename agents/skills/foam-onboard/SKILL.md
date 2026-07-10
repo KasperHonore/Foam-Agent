@@ -27,6 +27,14 @@ the `foamagent` MCP tools are wired in, just call `get_case_stats`.
   (`agents/skills/foam-setup/SKILL.md`) and work its steps until healthy,
   narrating what you fix. Come back here afterwards.
 
+Onboarding IS the first run, so the doctor belongs here — but only here.
+`python scripts/doctor.py --json` carries `onboardingNeeded`: when it is
+`false` (seeded preferences or prior runs exist), this machine has been set
+up before — keep the walkthrough light: confirm health, skip stages that
+are already done, and only revisit what the user asks for. After
+onboarding, the doctor is for first setup or unresponsive tools, not a
+per-session ritual.
+
 ## Stage 2 — Warm-up (first run only)
 
 The first retrieval call downloads a ~1.2 GB embedding model inside the

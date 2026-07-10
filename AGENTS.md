@@ -101,6 +101,7 @@ python init_database.py --openfoam_path $WM_PROJECT_DIR --force
 - **Do not regenerate FAISS indices** unless you have a specific reason. The pre-built indices in `database/faiss/` are correct and ready to use.
 - **Foundation OpenFOAM v10 must be sourced** for any simulation execution. Without `$WM_PROJECT_DIR`, execution tools will fail. ESI OpenFOAM is not compatible.
 - **Never edit generated skill copies** (`.claude/`, `.cursor/`, `.codex/`, `.opencode/`) — edit `agents/` and run `python scripts/sync_agent_assets.py`; CI fails on drift.
+- **Personal harness config is user-owned.** `CLAUDE.md`, `.claude/settings.local.json`, and `.claude/memory/` are gitignored: the product never ships them, and `git pull` / updates never create or overwrite them. Repo-level guidance for agents belongs here in `AGENTS.md`, not in a committed `CLAUDE.md`.
 
 ## Agent skills
 
