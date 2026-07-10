@@ -47,6 +47,7 @@ below repeat the load-bearing ones where extra judgment guidance applies.
 | Writing the Allrun script | [references/allrun-guide.md](references/allrun-guide.md) |
 | Judging run outcomes (after `parse_solver_log`) | [references/convergence.md](references/convergence.md) |
 | Judging mesh quality (after `assess_mesh`) | [references/mesh-quality.md](references/mesh-quality.md) |
+| Force/coefficient questions (drag, lift, Cd/Cl/Cm) | [references/forces.md](references/forces.md) |
 | A run failed — diagnosing errors | [references/error-playbook.md](references/error-playbook.md) |
 | Cluster / SLURM execution | [references/hpc-slurm.md](references/hpc-slurm.md) |
 | Harness without native subagents | [references/subagents/](references/subagents/) — inline role fallbacks (foam-mesher, foam-debugger, foam-visualizer) |
@@ -88,6 +89,11 @@ never need restating.
    - No gmsh files (`.geo`, `.msh`) in the file list.
    - Include `system/blockMeshDict` (or snappyHexMesh files) only when the user
      did not request a gmsh-generated or custom uploaded mesh.
+   - Forces or force coefficients in the requirement (drag, lift, Cd/Cl/Cm)?
+     Plan a `forceCoeffs` function object into `system/controlDict` now — on
+     Foundation v10 the reliable path is the object active during the solver
+     run, and this is the sanctioned exception to the function-object ban.
+     Recipe and worked block: [references/forces.md](references/forces.md).
 5. Present the plan (case name, solver, file list, mesh strategy) and confirm.
 
 ### 2. Set up the mesh (only if custom/GMSH mesh)
@@ -155,14 +161,22 @@ unsure about a utility's usage. Write it with
    raw-log checks in
    [references/multiphase-vof.md](references/multiphase-vof.md) — phase
    conservation and alpha bounds are invisible to the parser.
-3. On failure, enter the fix loop: delegate to the **foam-debugger** subagent
+3. Force/coefficient answers come from `parse_force_coefficients(case_dir)`
+   — typed Cd/Cl/Cm with tail-window statistics and the reference values,
+   and the run's ledger Key result cell filled as a side effect — never
+   from reading dat files and averaging by eye. Judge the window and the
+   normalization with [references/forces.md](references/forces.md). The
+   tool reports "no forceCoeffs output"? The same reference carries the
+   working v10 recipe (function object during the run; the post-hoc
+   reality per solver family).
+4. On failure, enter the fix loop: delegate to the **foam-debugger** subagent
    (no subagents? read
    [references/subagents/foam-debugger.md](references/subagents/foam-debugger.md)
    and [references/error-playbook.md](references/error-playbook.md), then do
    it inline). Iterate (diagnose → rewrite files → `run_case`) up to 25 times;
    keep a short history of attempts and try a *different* approach when an
    error repeats.
-4. Report success/failure honestly, with the failing log excerpts if any.
+5. Report success/failure honestly, with the failing log excerpts if any.
 
 Every run is recorded automatically in `runs/ledger.md` (the run ledger) —
 no bookkeeping on your side. For run-history questions ("list my runs",
