@@ -56,6 +56,22 @@ def test_require_case_dir_raises_when_missing(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# search_tutorials
+# ---------------------------------------------------------------------------
+
+def test_search_tutorials_index_defaults_to_tutorials_details():
+    # The onboarding skills warm the embedding model with a bare
+    # search_tutorials call, so `index` must not be a required argument (#15).
+    import inspect
+
+    # Depending on the fastmcp version, @mcp.tool returns either the plain
+    # function or a FunctionTool wrapper exposing it as .fn.
+    fn = getattr(fs.search_tutorials, "fn", fs.search_tutorials)
+    param = inspect.signature(fn).parameters["index"]
+    assert param.default.default == "openfoam_tutorials_details"
+
+
+# ---------------------------------------------------------------------------
 # write_case_file
 # ---------------------------------------------------------------------------
 

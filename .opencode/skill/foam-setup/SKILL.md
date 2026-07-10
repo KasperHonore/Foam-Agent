@@ -91,7 +91,10 @@ pip-install the package, so use `python -m src.mcp.fastmcp_server`, not
 Wait ~15 s, then confirm startup:
 
 ```powershell
-docker logs foamagent-mcp 2>&1 | Select-String "Uvicorn running"
+# The $( ) wrapper matters on Windows PowerShell 5.1: a bare `2>&1 |` wraps
+# docker's stderr lines in red NativeCommandError records even on success.
+# Keep the 2>&1 itself — Uvicorn prints its banner to stderr.
+$(docker logs foamagent-mcp 2>&1) | Select-String "Uvicorn running"
 ```
 
 No "Uvicorn running" → read the full `docker logs foamagent-mcp` and
@@ -106,7 +109,8 @@ Re-run the health check (step 1). Then be aware of two first-use behaviors:
 - **First retrieval call** (`find_similar_case` / `search_tutorials`)
   downloads the ~1.2 GB Qwen embedding model inside the container and loads
   4 FAISS indices — expect several minutes of silence. It is NOT hung.
-  Warm it proactively with a throwaway `search_tutorials` call.
+  Warm it proactively with a throwaway call, e.g.
+  `search_tutorials(index="openfoam_tutorials_details", query="lid driven cavity")`.
 - **Execution tools** (`run_case`, `run_openfoam_command`) need OpenFOAM,
   which the container sources automatically. If they fail with
   `WM_PROJECT_DIR is not set`, the entrypoint didn't run — recreate the
