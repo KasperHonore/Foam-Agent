@@ -56,6 +56,8 @@ src/
   mechanics.py         # key-free mechanical layer: file I/O, execution, log
                        # parsing, lazy FAISS retrieval (local HF embeddings),
                        # Python script execution, SLURM
+  ledger.py            # run ledger (runs/ledger.md): server-owned record of
+                       # every run, written as run-lifecycle side effects
   mcp/                 # FastMCP server exposing mechanics as tools (see src/mcp/README.md)
   translation/         # rules-based Foundation→ESI case translation
 database/

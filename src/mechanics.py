@@ -27,6 +27,7 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+import ledger
 from text_utils import tokenize
 
 SRC_DIR = Path(__file__).resolve().parent
@@ -179,13 +180,22 @@ def resolve_case_dir(
     run_times: int = 1,
     run_directory: Optional[str] = None,
 ) -> str:
-    """Resolve the output directory for a case."""
-    if case_dir:
-        return case_dir
+    """Resolve the output directory for a case and ledger it as planned.
+
+    Side effect: inserts (idempotently) a planned row for the case into the
+    run ledger at the runs root — server-owned tracking, so every run is on
+    the record no matter which skill or harness drove it. Out-of-tree
+    explicit case_dir values are left untracked.
+    """
     base_dir = str(run_directory) if run_directory else str(RUNS_DIR)
-    if run_times > 1:
-        return os.path.join(base_dir, f"{case_name}_{run_times}")
-    return os.path.join(base_dir, case_name)
+    if case_dir:
+        resolved = case_dir
+    elif run_times > 1:
+        resolved = os.path.join(base_dir, f"{case_name}_{run_times}")
+    else:
+        resolved = os.path.join(base_dir, case_name)
+    ledger.track_planned(base_dir, resolved)
+    return resolved
 
 
 # ============================================================================

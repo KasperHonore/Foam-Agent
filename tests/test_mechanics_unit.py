@@ -60,7 +60,8 @@ def test_remove_numeric_folders_keeps_zero(tmp_path):
     assert remaining == {"0", "constant"}
 
 
-def test_resolve_case_dir():
+def test_resolve_case_dir(tmp_path, monkeypatch):
+    monkeypatch.setattr(mechanics, "RUNS_DIR", tmp_path / "runs")
     explicit = mechanics.resolve_case_dir("x", case_dir="/tmp/somewhere")
     assert explicit == "/tmp/somewhere"
     default = mechanics.resolve_case_dir("my_case")
