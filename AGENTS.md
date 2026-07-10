@@ -94,3 +94,17 @@ python init_database.py --openfoam_path $WM_PROJECT_DIR --force
 - **Do not regenerate FAISS indices** unless you have a specific reason. The pre-built indices in `database/faiss/` are correct and ready to use.
 - **Foundation OpenFOAM v10 must be sourced** for any simulation execution. Without `$WM_PROJECT_DIR`, execution tools will fail. ESI OpenFOAM is not compatible.
 - **Never edit generated skill copies** (`.claude/`, `.cursor/`, `.codex/`, `.opencode/`, `.pi/`) — edit `agents/` and run `python scripts/sync_agent_assets.py`; CI fails on drift.
+
+## Agent skills
+
+### Issue tracker
+
+Hybrid: drafts and research live as local markdown under `.scratch/<feature>/` at the workspace root (one level above this repo checkout); actionable specs are published to GitHub Issues on KasperHonore/Foam-Agent. External PRs are not a triage surface. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Canonical defaults for all five roles (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`); `ready-for-agent` and `wontfix` already exist on GitHub. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
