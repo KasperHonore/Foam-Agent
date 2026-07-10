@@ -282,6 +282,10 @@ async def run_case(
     Cleans old logs and time-step folders first. On failure, errors contains
     the relevant log excerpts — diagnose them, fix the case files with
     write_case_file, and call run_case again.
+
+    The run ledger (runs/ledger.md) follows the run automatically: the row
+    is running while Allrun executes, then done with a Result verdict on
+    success or debugging on failure. No bookkeeping needed on your side.
     """
     case_dir = _require_case_dir(case_dir)
 
@@ -438,11 +442,17 @@ async def submit_slurm_job(
     script_content: str = Field(description="Full SLURM batch script content (you write it for the user's cluster)"),
     ctx: Context = None,
 ) -> SlurmSubmitResponse:
-    """Save a SLURM script into the case directory and submit it with sbatch."""
+    """Save a SLURM script into the case directory and submit it with sbatch.
+
+    A successful submission flips the case's run-ledger row to running;
+    poll slurm_job_status to have the outcome stamped when the job ends.
+    """
     case_dir = _abs_case_dir(case_dir)
     script_path = os.path.join(case_dir, "submit_job.slurm")
     mechanics.save_file(script_path, script_content)
-    job_id, submitted, error = await asyncio.to_thread(mechanics.submit_slurm_job, script_path)
+    job_id, submitted, error = await asyncio.to_thread(
+        mechanics.submit_slurm_job, script_path, case_dir
+    )
     return SlurmSubmitResponse(job_id=job_id, submitted=submitted, error=error)
 
 
@@ -451,7 +461,11 @@ async def slurm_job_status(
     job_id: str = Field(description="SLURM job id returned by submit_slurm_job"),
     ctx: Context = None,
 ) -> str:
-    """Check a SLURM job's status via squeue ('COMPLETED' when no longer queued)."""
+    """Check a SLURM job's status via squeue ('COMPLETED' when no longer queued).
+
+    Observing a terminal state stamps the case's run-ledger row like a local
+    run: done plus a Result verdict, or debugging when the job failed.
+    """
     status, ok, error = await asyncio.to_thread(mechanics.check_job_status, job_id)
     if not ok:
         raise RuntimeError(error)
