@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import convergence
+import forcecoeffs
 import mechanics
 import meshcheck
 from translation.esi_translator import ESITranslator
@@ -62,6 +63,12 @@ the numbers are computed, never guessed, and cost the same on any log size.
 After meshing, assess_mesh runs `checkMesh -allTopology -allGeometry` and
 returns the mesh census plus per-metric pass/warn/fail classifications and
 a verdict with evidence — prefer it over eyeballing raw checkMesh text.
+
+When a case has forceCoeffs output, parse_force_coefficients returns the
+typed coefficient summary (Cd/Cl/Cm with first/final values and tail-window
+statistics, plus the reference values used for normalization) and stamps a
+compact summary into the run ledger's Key result cell — prefer it over
+reading dat files and averaging by eye.
 
 The run ledger (runs/ledger.md) tracks every run automatically as a side
 effect of the tools above. set_run_note is the ONLY sanctioned skill-side
@@ -537,6 +544,79 @@ async def assess_mesh(
     case_dir = _require_case_dir(case_dir)
     assessment = await asyncio.to_thread(meshcheck.assess_mesh, case_dir, timeout)
     return MeshAssessmentResponse(**dataclasses.asdict(assessment))
+
+
+# ============================================================================
+# Force-coefficient parsing (deterministic, key-free)
+# ============================================================================
+
+class ForceReferenceModel(BaseModel):
+    lift_dir: Optional[List[float]] = Field(description="Lift direction vector from the dat header (None when the line is absent)")
+    drag_dir: Optional[List[float]] = Field(description="Drag direction vector")
+    pitch_axis: Optional[List[float]] = Field(description="Pitch axis for the moment coefficient")
+    mag_u_inf: Optional[float] = Field(description="Free-stream velocity magnitude the coefficients were normalized with")
+    l_ref: Optional[float] = Field(description="Reference length (moment normalization)")
+    a_ref: Optional[float] = Field(description="Reference area (force normalization)")
+    cofr: Optional[List[float]] = Field(description="Centre of rotation for moments")
+
+
+class TailWindowModel(BaseModel):
+    samples: int = Field(description="Number of samples the tail statistics were computed over")
+    fraction: float = Field(description="The documented default window fraction (0.2 = last 20% of samples, rounded up)")
+    min_samples: int = Field(description="The documented window floor (at least this many samples, or all when fewer exist)")
+    start_time: float = Field(description="Solver time of the window's first sample")
+    end_time: float = Field(description="Solver time of the window's last sample")
+
+
+class CoefficientSeriesModel(BaseModel):
+    name: str = Field(description="Coefficient name as the dat header carries it ('Cm', 'Cd', 'Cl', 'Cl(f)', 'Cl(r)')")
+    first: float = Field(description="Value at the first sample")
+    final: float = Field(description="Value at the last sample")
+    tail_mean: float = Field(description="Mean over the reported tail window")
+    tail_min: float = Field(description="Minimum over the reported tail window")
+    tail_max: float = Field(description="Maximum over the reported tail window")
+
+
+class ForceCoefficientsResponse(BaseModel):
+    function_name: str = Field(description="The force function object whose output was parsed (e.g. 'forceCoeffs1')")
+    dat_file: str = Field(description="The dat file parsed, relative to the case directory (posix-style)")
+    reference: ForceReferenceModel = Field(description="Reference values from the header — check these before trusting a number (wrong Aref/lRef/magUInf means wrong normalization)")
+    samples: int = Field(description="Number of data samples parsed")
+    start_time: float = Field(description="Solver time of the first sample")
+    end_time: float = Field(description="Solver time of the last sample")
+    window: TailWindowModel = Field(description="The tail window the statistics were computed over")
+    coefficients: List[CoefficientSeriesModel] = Field(description="Per-coefficient summary, in the dat header's column order")
+    key_result: str = Field(description="The compact summary stamped into the ledger: 'Cd=<tail mean:.4g> Cl=<tail mean:.4g> (tail mean)'")
+    stamped: bool = Field(description="True when the case's run-ledger row existed and its Key result cell was filled")
+
+
+@mcp.tool(name="parse_force_coefficients")
+async def parse_force_coefficients(
+    case_dir: str = Field(description="Case directory whose forceCoeffs output should be parsed"),
+    function_name: str = Field(default="", description="Force function object to read (e.g. 'forceCoeffs1'); required only when several force function objects have output — the error names the candidates"),
+    ctx: Context = None,
+) -> ForceCoefficientsResponse:
+    """Parse the case's forceCoeffs output into typed coefficient facts and
+    fill the run ledger's Key result cell.
+
+    Deterministic and key-free: locates the newest time directory under
+    postProcessing/<function>/, parses the Foundation v10 forceCoeffs.dat
+    (header reference values plus the Time/Cm/Cd/Cl/Cl(f)/Cl(r) series) and
+    returns per-coefficient first/final values with tail-window statistics
+    (mean/min/max over the last 20% of samples, at least 10, window reported)
+    — numbers computed from the file, never averaged by eye. When the case
+    has a run-ledger row, a compact summary (tail-mean Cd and Cl) is stamped
+    into its Key result cell as a server-owned side effect; re-parsing
+    re-stamps idempotently and rowless cases still get the full analysis.
+    A case with no forceCoeffs output, several candidate function objects
+    and no explicit function_name, or an empty/headerless dat file raises a
+    typed error — never fabricated statistics.
+    """
+    case_dir = _require_case_dir(case_dir)
+    analysis = await asyncio.to_thread(
+        forcecoeffs.parse_force_coefficients, case_dir, function_name or None
+    )
+    return ForceCoefficientsResponse(**dataclasses.asdict(analysis))
 
 
 # ============================================================================

@@ -195,6 +195,31 @@ def set_note(runs_root: str, run_id: str, *, note: str | None = None,
     return row
 
 
+def set_key_result(runs_root: str, case_dir: str, key_result: str) -> Row | None:
+    """Server-owned machine write: fill a case's Key result cell.
+
+    The Key result cell is machine-owned like the lifecycle columns — this
+    is NOT part of set_note's sanctioned skill surface. The force-coefficient
+    parser (issue #55) stamps its compact summary here as a side effect of
+    parsing. Rows are keyed by the case key (like the lifecycle writes);
+    a case without a row — out-of-tree, or never tracked — returns None and
+    the ledger is left untouched: stamping never adopts. Re-stamping
+    overwrites idempotently. The stored cell is folded like a note so the
+    table format survives whatever the summary carries.
+    """
+    case = _case_key(runs_root, case_dir)
+    if case is None:
+        return None
+    with _LOCK:
+        rows = read_rows(runs_root)
+        row = next((r for r in rows if r.case == case), None)
+        if row is None:
+            return None
+        row.key_result = _normalize_note(key_result) or PLACEHOLDER
+        _write(runs_root, rows)
+    return row
+
+
 def _normalize_note(note: str) -> str:
     """Fold a note into the form the table parser reads back unchanged.
 
