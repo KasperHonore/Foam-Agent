@@ -184,7 +184,11 @@ async def resolve_case_dir(
     case_dir: str = Field(default="", description="Optional explicit directory; returned as-is if set"),
     ctx: Context = None,
 ) -> str:
-    """Resolve the directory where a new case should be created (under runs/)."""
+    """Resolve the directory where a new case should be created (under runs/).
+
+    Also records the case as a planned run in runs/ledger.md (server-owned
+    run ledger; see run-states.yml beside it for the state vocabulary).
+    """
     return mechanics.resolve_case_dir(case_name=case_name, case_dir=case_dir)
 
 

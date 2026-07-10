@@ -36,8 +36,9 @@ The unit suite is key-free and needs no OpenFOAM, FAISS, or Docker:
 pytest -m "not integration" --ignore=tests/test_lid_driven_cavity_mcp.py
 ```
 
-- `tests/test_mechanics_unit.py`, `tests/test_esi_translator.py` — pure Python,
-  run everywhere. **This is what CI gates on.**
+- `tests/test_mechanics_unit.py`, `tests/test_ledger_unit.py`,
+  `tests/test_esi_translator.py` — pure Python, run everywhere.
+  **This is what CI gates on.**
 - `tests/test_lid_driven_cavity_mcp.py` — end-to-end; needs a **running MCP
   server** with OpenFOAM v10. Run it by hand against a live server:
   `python tests/test_lid_driven_cavity_mcp.py`.
