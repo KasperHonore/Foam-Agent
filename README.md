@@ -184,6 +184,7 @@ Validated by autonomous end-to-end shakedowns: steady simpleFoam (backward-facin
 | `run_python_script` | Server-side Python (PyVista, GMSH) with stdout capture |
 | `ensure_foam_file` / `read_mesh_boundaries` | Visualization marker; patch names/types |
 | `parse_solver_log` | Typed convergence facts from a solver log — residuals, Courant, continuity, completion — plus a verdict with evidence |
+| `assess_mesh` | Structured `checkMesh -allTopology -allGeometry`: mesh census, per-metric pass/warn/fail (topology vs geometry), verdict with evidence |
 | `translate_case_to_esi` | Rules-based Foundation→ESI translation (best-effort) |
 | `submit_slurm_job` / `slurm_job_status` | HPC job submission and polling |
 | `set_run_note` | Annotate/archive a run in `runs/ledger.md` — the only skill-side ledger write |

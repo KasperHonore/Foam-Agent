@@ -135,12 +135,12 @@ def test_set_run_note_surfaces_unknown_id_as_typed_error(tmp_path, monkeypatch):
 FIXTURES = REPO / "tests" / "fixtures" / "convergence"
 
 
-def test_parse_solver_log_is_registered_as_tool_seventeen():
+def test_parse_solver_log_is_registered():
     import asyncio
 
     names = {t.name for t in asyncio.run(fs.mcp.list_tools())}
     assert "parse_solver_log" in names
-    assert len(names) == 17  # the convergence parser joins the 16 existing tools
+    # The tool count is pinned by the newest tool's registration test below.
 
 
 def test_parse_solver_log_returns_the_typed_verdict():
@@ -169,3 +169,57 @@ def test_parse_solver_log_explicit_log_file_overrides():
 
     assert resp.solver == "blockMesh"
     assert resp.residuals == []
+
+
+# ---------------------------------------------------------------------------
+# assess_mesh (#44): structured checkMesh assessment, callable via MCP
+# ---------------------------------------------------------------------------
+
+CHECKMESH_FIXTURES = REPO / "tests" / "fixtures" / "checkmesh"
+
+
+def test_assess_mesh_is_registered_as_tool_eighteen():
+    import asyncio
+
+    names = {t.name for t in asyncio.run(fs.mcp.list_tools())}
+    assert "assess_mesh" in names
+    assert len(names) == 18  # the mesh assessment joins the 17 existing tools
+
+
+def test_assess_mesh_returns_the_typed_assessment(tmp_path, monkeypatch):
+    # Stubbed subprocess boundary (prior art: test_run_sourced.py): the tool
+    # sees the REAL harvested "Mesh OK." checkMesh output, no OpenFOAM needed.
+    import asyncio
+
+    ok_text = (CHECKMESH_FIXTURES / "ok" / "log.checkMesh").read_text()
+    monkeypatch.setattr(fs.mechanics, "_run_sourced",
+                        lambda command, cwd, timeout: (0, ok_text, "", False))
+
+    fn = getattr(fs.assess_mesh, "fn", fs.assess_mesh)
+    resp = asyncio.run(fn(case_dir=str(tmp_path)))
+
+    assert resp.verdict == "ok"
+    assert resp.mesh_ok is True
+    assert resp.failed_checks == 0
+    assert resp.flags == "-allTopology -allGeometry"
+    assert resp.census.cells == 400          # by eye from the fixture
+    assert resp.census.cell_types["hexahedra"] == 400
+    by_name = {m.name: m for m in resp.metrics}
+    assert by_name["max_skewness"].classification == "pass"
+    assert by_name["max_skewness"].check == "geometry"
+    assert resp.evidence
+
+
+def test_assess_mesh_surfaces_the_typed_error(tmp_path, monkeypatch):
+    # A summary-less output (crashed checkMesh) must surface as the typed
+    # MeshAssessmentError, never a fabricated assessment.
+    import asyncio
+
+    import meshcheck
+
+    monkeypatch.setattr(fs.mechanics, "_run_sourced",
+                        lambda command, cwd, timeout: (1, "no mesh here", "", False))
+
+    fn = getattr(fs.assess_mesh, "fn", fs.assess_mesh)
+    with pytest.raises(meshcheck.MeshAssessmentError):
+        asyncio.run(fn(case_dir=str(tmp_path)))
