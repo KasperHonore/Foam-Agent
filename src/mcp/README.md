@@ -69,6 +69,7 @@ Switch the config files above to stdio (`"command": "foamagent-mcp"`) if you pre
 | `run_python_script` | Server-side Python (PyVista rendering, GMSH mesh generation) |
 | `ensure_foam_file` | `.foam` marker for the PyVista OpenFOAM reader |
 | `read_mesh_boundaries` | Patch names/types from `constant/polyMesh/boundary` |
+| `parse_solver_log` | Typed convergence facts from a solver log — residuals, Courant, continuity, completion — plus a verdict with evidence |
 | `translate_case_to_esi` | Rules-based Foundation→ESI translation |
 | `submit_slurm_job` / `slurm_job_status` | HPC job submission and polling |
 | `set_run_note` | Annotate/archive a run in `runs/ledger.md` — the only skill-side ledger write |

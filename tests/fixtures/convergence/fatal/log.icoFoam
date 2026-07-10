@@ -1,0 +1,43 @@
+/*---------------------------------------------------------------------------*\
+  =========                 |
+  \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox
+   \\    /   O peration     | Website:  https://openfoam.org
+    \\  /    A nd           | Version:  10
+     \\/     M anipulation  |
+\*---------------------------------------------------------------------------*/
+Build  : 10-c4cf895ad8fa
+Exec   : icoFoam
+Date   : Jul 10 2026
+Time   : 17:40:46
+Host   : "e89b818dc477"
+PID    : 515
+I/O    : uncollated
+Case   : /home/openfoam/Foam-Agent/runs/lid_driven_cavity_mcp_test
+nProcs : 1
+sigFpe : Enabling floating point exception trapping (FOAM_SIGFPE).
+fileModificationChecking : Monitoring run-time modified files using timeStampMaster (fileModificationSkew 10)
+allowSystemOperations : Allowing user-supplied system call operations
+
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+Create time
+
+Create mesh for time = 0
+
+Reading physicalProperties
+
+Reading field p
+
+Reading field U
+
+Reading/calculating face flux field phi
+
+
+--> FOAM FATAL IO ERROR: 
+keyword div(phi,U) is undefined in dictionary "/home/openfoam/Foam-Agent/runs/lid_driven_cavity_mcp_test/system/fvSchemes.divSchemes"
+
+file: /home/openfoam/Foam-Agent/runs/lid_driven_cavity_mcp_test/system/fvSchemes.divSchemes from line 26 to line 28.
+
+    From function const Foam::entry& Foam::dictionary::lookupEntry(const Foam::word&, bool, bool) const
+    in file db/dictionary/dictionary.C at line 800.
+
+FOAM exiting

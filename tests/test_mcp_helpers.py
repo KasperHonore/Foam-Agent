@@ -97,12 +97,12 @@ def test_write_case_file_permission_error_is_actionable(tmp_path, monkeypatch):
 # set_run_note (#32): the one skill-side ledger write
 # ---------------------------------------------------------------------------
 
-def test_set_run_note_is_registered_as_tool_sixteen():
+def test_set_run_note_is_registered():
     import asyncio
 
     names = {t.name for t in asyncio.run(fs.mcp.list_tools())}
     assert "set_run_note" in names
-    assert len(names) == 16  # the ledger write joins the 15 existing tools
+    # The tool count is pinned by the newest tool's registration test below.
 
 
 def test_set_run_note_returns_the_updated_row(tmp_path, monkeypatch):
@@ -126,3 +126,46 @@ def test_set_run_note_surfaces_unknown_id_as_typed_error(tmp_path, monkeypatch):
     fn = getattr(fs.set_run_note, "fn", fs.set_run_note)
     with pytest.raises(ValueError, match="0042"):
         asyncio.run(fn(id="0042", note="ghost", archive=None))
+
+
+# ---------------------------------------------------------------------------
+# parse_solver_log (#39): typed convergence facts, callable via MCP
+# ---------------------------------------------------------------------------
+
+FIXTURES = REPO / "tests" / "fixtures" / "convergence"
+
+
+def test_parse_solver_log_is_registered_as_tool_seventeen():
+    import asyncio
+
+    names = {t.name for t in asyncio.run(fs.mcp.list_tools())}
+    assert "parse_solver_log" in names
+    assert len(names) == 17  # the convergence parser joins the 16 existing tools
+
+
+def test_parse_solver_log_returns_the_typed_verdict():
+    import asyncio
+
+    fn = getattr(fs.parse_solver_log, "fn", fs.parse_solver_log)
+    resp = asyncio.run(fn(case_dir=str(FIXTURES / "converged"), log_file=""))
+
+    assert resp.solver == "icoFoam"
+    assert resp.log_file == "log.icoFoam"  # picked from controlDict application
+    assert resp.completed is True
+    assert resp.verdict == "converged"
+    assert resp.evidence
+    assert resp.time.latest_time == pytest.approx(0.5)
+    assert [r.field for r in resp.residuals] == ["Ux", "Uy", "p"]
+    assert resp.courant.last_max == pytest.approx(0.852134)
+    assert resp.fatal_errors == []
+
+
+def test_parse_solver_log_explicit_log_file_overrides():
+    import asyncio
+
+    fn = getattr(fs.parse_solver_log, "fn", fs.parse_solver_log)
+    resp = asyncio.run(fn(case_dir=str(FIXTURES / "converged"),
+                          log_file="log.blockMesh"))
+
+    assert resp.solver == "blockMesh"
+    assert resp.residuals == []
