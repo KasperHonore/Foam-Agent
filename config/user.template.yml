@@ -1,0 +1,38 @@
+# Foam-Agent user preferences -- TEMPLATE (committed; updated by `git pull`).
+#
+# The live copy is config/user.yml: seeded from this template and filled in
+# conversationally by the foam-onboard skill -- you are never asked to
+# hand-edit it (though you always may; it is a plain YAML file you own).
+#
+# Update contract: config/user.yml is gitignored, so `git pull`,
+# `docker pull` and container recreation never touch it. New fields ship in
+# this template first; onboarding (or you) can copy them across.
+#
+# Every value is a standing default the foam skill applies at case-planning
+# time. Nothing here is a hard constraint: anything you say in conversation
+# overrides these for that simulation.
+
+# Unit system for discussing inputs and reporting results back to you.
+# Case files themselves always use OpenFOAM's SI conventions.
+# Options: si | us-customary
+units: si
+
+# How the agent leans when you don't specify mesh resolution:
+#   coarse   - fast previews, lower cell counts
+#   balanced - sensible middle ground
+#   fine     - resolve details at the cost of runtime
+mesh_fineness: balanced
+
+# What happens after a successful run:
+#   auto  - always render the default plot (headless PyVista PNG), unasked
+#   offer - ask whether you want a plot
+#   off   - visualize only when you explicitly ask
+visualization: offer
+
+# Field plotted when you don't name one (e.g. U for velocity, p for pressure).
+visualization_field: U
+
+# Where simulations execute when you don't say:
+#   local - the Dockerized server on this machine
+#   hpc   - an HPC cluster via SLURM (the skill will ask for cluster details)
+execution: local
