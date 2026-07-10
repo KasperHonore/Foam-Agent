@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import convergence
 import mechanics
+import meshcheck
 from translation.esi_translator import ESITranslator
 
 
@@ -57,6 +58,10 @@ After (or during) a run, parse_solver_log turns the solver log into typed
 convergence facts — per-field residuals, Courant numbers, continuity errors,
 completion, and a verdict with evidence. Prefer it over reading raw logs:
 the numbers are computed, never guessed, and cost the same on any log size.
+
+After meshing, assess_mesh runs `checkMesh -allTopology -allGeometry` and
+returns the mesh census plus per-metric pass/warn/fail classifications and
+a verdict with evidence — prefer it over eyeballing raw checkMesh text.
 
 The run ledger (runs/ledger.md) tracks every run automatically as a side
 effect of the tools above. set_run_note is the ONLY sanctioned skill-side
@@ -474,6 +479,64 @@ async def parse_solver_log(
         convergence.parse_solver_log, case_dir, log_file or None
     )
     return SolverLogResponse(**dataclasses.asdict(analysis))
+
+
+# ============================================================================
+# Structured mesh assessment (deterministic, key-free)
+# ============================================================================
+
+class MeshCensusModel(BaseModel):
+    points: Optional[int] = Field(description="Point count from checkMesh's 'Mesh stats' block (None when absent)")
+    faces: Optional[int] = Field(description="Face count")
+    internal_faces: Optional[int] = Field(description="Internal face count")
+    cells: Optional[int] = Field(description="Cell count")
+    boundary_patches: Optional[int] = Field(description="Boundary patch count")
+    cell_types: Dict[str, int] = Field(description="Cell counts by type, keyed as checkMesh prints them (hexahedra, prisms, wedges, pyramids, 'tet wedges', tetrahedra, polyhedra)")
+
+
+class MeshMetricModel(BaseModel):
+    name: str = Field(description="Stable snake_case metric name (e.g. 'max_skewness', 'max_non_orthogonality', 'point_usage')")
+    value: Optional[float] = Field(description="Numeric value where checkMesh reports one (None for value-less checks)")
+    check: str = Field(description="'topology' or 'geometry' — which checkMesh block the metric came from")
+    checkmesh_ok: bool = Field(description="checkMesh's own mark: False exactly for its ***-failed checks")
+    classification: str = Field(description="'pass', 'warn' (marginal but legal, or a checkMesh '*' notice) or 'fail'")
+
+
+class MeshAssessmentResponse(BaseModel):
+    flags: str = Field(description="checkMesh flags used, read from the run's own Exec line")
+    census: MeshCensusModel = Field(description="Mesh size facts: points/faces/cells and the cell-type breakdown")
+    metrics: List[MeshMetricModel] = Field(description="Per-check entries with checkMesh's own mark and the pass/warn/fail classification")
+    failed_checks: int = Field(description="checkMesh's own reported failure count (0 for 'Mesh OK.')")
+    mesh_ok: bool = Field(description="True iff checkMesh itself concluded 'Mesh OK.'")
+    verdict: str = Field(description="'ok', 'warnings' or 'failed' — never better than checkMesh's own conclusion")
+    evidence: List[str] = Field(description="Human-readable strings naming the offending (or marginal) metrics")
+
+
+@mcp.tool(name="assess_mesh")
+async def assess_mesh(
+    case_dir: str = Field(description="Case directory whose mesh should be assessed"),
+    timeout: int = Field(default=600, description="Max checkMesh execution time in seconds"),
+    ctx: Context = None,
+) -> MeshAssessmentResponse:
+    """Run `checkMesh -allTopology -allGeometry` on the case and return a typed
+    mesh quality assessment.
+
+    Deterministic and key-free on the parsing side: the mesh census
+    (points/faces/cells, cell types), every quality metric with its value and
+    checkMesh's own ok/failed mark (topology vs geometry distinguished), and
+    a verdict (ok / warnings / failed) with evidence naming the offending
+    metrics. checkMesh's failure marks are ground truth — the verdict is
+    never better than checkMesh's own conclusion. On top, a conservative
+    built-in warn band flags marginal-but-legal meshes: non-orthogonality
+    from 65 degrees (checkMesh fails at 90), skewness from 2 (fails at 4),
+    aspect ratio from 100 (fails at 1000). Judge warn-band values against
+    your application yourself — a marginal mesh may be fine for a steady
+    RANS estimate and unusable for an LES. A case with no mesh (or a
+    checkMesh crash) raises a typed error, never a fabricated assessment.
+    """
+    case_dir = _require_case_dir(case_dir)
+    assessment = await asyncio.to_thread(meshcheck.assess_mesh, case_dir, timeout)
+    return MeshAssessmentResponse(**dataclasses.asdict(assessment))
 
 
 # ============================================================================

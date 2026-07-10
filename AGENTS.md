@@ -61,6 +61,8 @@ src/
                        # every run, written as run-lifecycle side effects
   convergence.py       # solver-log convergence parser: typed residuals,
                        # Courant/continuity facts and a verdict with evidence
+  meshcheck.py         # structured checkMesh assessment: mesh census, typed
+                       # per-metric pass/warn/fail and a verdict with evidence
   mcp/                 # FastMCP server exposing mechanics as tools (see src/mcp/README.md)
   translation/         # rules-based Foundation→ESI case translation
 database/
