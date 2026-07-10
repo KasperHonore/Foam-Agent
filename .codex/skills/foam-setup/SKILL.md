@@ -91,7 +91,10 @@ pip-install the package, so use `python -m src.mcp.fastmcp_server`, not
 Wait ~15 s, then confirm startup:
 
 ```powershell
-docker logs foamagent-mcp 2>&1 | Select-String "Uvicorn running"
+# The $( ) wrapper matters on Windows PowerShell 5.1: a bare `2>&1 |` wraps
+# docker's stderr lines in red NativeCommandError records even on success.
+# Keep the 2>&1 itself — Uvicorn prints its banner to stderr.
+$(docker logs foamagent-mcp 2>&1) | Select-String "Uvicorn running"
 ```
 
 No "Uvicorn running" → read the full `docker logs foamagent-mcp` and
