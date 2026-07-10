@@ -135,7 +135,7 @@ docker rm -f foamagent-mcp && docker run -d --name foamagent-mcp --restart unles
   foamagent:latest python -m src.mcp.fastmcp_server --transport http --host 0.0.0.0 --port 7860
 ```
 
-**The contract:** `git pull` never touches your simulations (`runs/`, `output/`), your prompts and meshes at the repo root (`user_requirement.txt`, `user_req_*.txt`, `*.msh`), or your local agent settings (`CLAUDE.md`, `.claude/settings.local.json`, `.claude/memory/`) — they are all gitignored. `runs/` is bind-mounted into the container, so simulation results live in your clone and survive container recreation too. Skills and their matching server version update together in lockstep.
+**The contract:** `git pull` never touches your simulations (`runs/`, `output/`), your prompts and meshes at the repo root (`user_requirement.txt`, `user_req_*.txt`, `*.msh`), your preferences (`config/user.yml`, seeded at onboarding and read by the foam skill at case-planning time), or your local agent settings (`CLAUDE.md`, `.claude/settings.local.json`, `.claude/memory/`) — they are all gitignored. `runs/` is bind-mounted into the container, so simulation results live in your clone and survive container recreation too. Skills and their matching server version update together in lockstep.
 
 ## Project structure
 

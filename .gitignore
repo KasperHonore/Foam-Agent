@@ -13,6 +13,10 @@ benchmark/
 /user_req_*.txt
 /*.msh
 
+# Your preferences are yours too -- seeded from config/user.template.yml by
+# onboarding (foam-onboard), never touched by `git pull` / `docker pull`.
+config/user.yml
+
 # Local ESI translation dev artifacts (extracted v10 cases, not for PR)
 *_v10_ready/
 tests/fixtures/v10/

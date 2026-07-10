@@ -46,6 +46,14 @@ that is not a hang.
 
 ### 1. Plan the case
 
+Standing defaults first: if `config/user.yml` exists at the repo root (read
+it with your local file tools — repo config, not a case file), treat its
+values (units, mesh fineness bias, visualization, local-vs-HPC) as the
+user's defaults for everything they don't specify in this conversation —
+what they say always wins. Absent? Proceed with built-in defaults and
+suggest the **foam-onboard** skill once — it seeds the file so defaults
+never need restating.
+
 1. Call `get_case_stats` to see the valid `case_domain`, `case_category` and
    `case_solver` values.
 2. From the user requirement, decide: a short `case_name` (snake_case), and a
@@ -144,20 +152,24 @@ no bookkeeping on your side. For run-history questions ("list my runs",
 "what happened to X?") follow the **foam-runs** skill instead of re-reading
 logs.
 
-### 6. HPC execution (only if the user asks for cluster/SLURM)
+### 6. HPC execution (if the user asks for cluster/SLURM, or `execution: hpc` is their standing default)
 
 Follow [references/hpc-slurm.md](references/hpc-slurm.md): write a SLURM script
 tailored to the user's cluster, submit with `submit_slurm_job`, poll with
 `slurm_job_status`.
 
-### 7. Visualization (only if the user asks)
+### 7. Visualization (if the user asks — or their standing defaults say so)
 
-Delegate to the **foam-visualizer** subagent (no subagents? follow
+The `visualization` preference governs this step after a successful run:
+`auto` renders the default plot unasked, `offer` means ask first (also the
+built-in behavior without a preferences file), `off` means only on explicit
+request. Delegate to the **foam-visualizer** subagent (no subagents? follow
 [references/subagents/foam-visualizer.md](references/subagents/foam-visualizer.md)
 inline): `ensure_foam_file`,
 then `run_python_script` with a PyVista script that loads the `.foam` file,
-colors by the requested field with the `coolwarm` colormap, and saves a PNG
-(pass `expected_output` so success is verified). Fix and retry on errors.
+colors by the requested field (default: their `visualization_field`) with
+the `coolwarm` colormap, and saves a PNG (pass `expected_output` so success
+is verified). Fix and retry on errors.
 
 ### 8. ESI translation (only if the user's OpenFOAM is the ESI fork)
 
