@@ -174,6 +174,11 @@ def read_case_files(case_dir: str, dir_structure: Optional[Dict[str, List[str]]]
     return result
 
 
+def _runs_root(run_directory: Optional[str]) -> str:
+    """The runs directory whose root owns the ledger (default: repo runs/)."""
+    return str(run_directory) if run_directory else str(RUNS_DIR)
+
+
 def resolve_case_dir(
     case_name: str,
     case_dir: str = "",
@@ -187,7 +192,7 @@ def resolve_case_dir(
     the record no matter which skill or harness drove it. Out-of-tree
     explicit case_dir values are left untracked.
     """
-    base_dir = str(run_directory) if run_directory else str(RUNS_DIR)
+    base_dir = _runs_root(run_directory)
     if case_dir:
         resolved = case_dir
     elif run_times > 1:
@@ -346,15 +351,77 @@ def extract_commands_from_allrun_out(out_file: str) -> list:
     return commands
 
 
+# Mesh tools looked for in Allrun, in stamping order.
+_MESH_TOOLS = ("blockMesh", "gmshToFoam", "snappyHexMesh")
+
+
+def _inspect_solver(case_dir: str) -> str:
+    """Best-effort Solver for the ledger: the controlDict application entry.
+
+    Deterministic inspection of case contents; the placeholder when there is
+    no controlDict or no application line to read.
+    """
+    content = read_file(os.path.join(case_dir, "system", "controlDict"))
+    match = re.search(r"^\s*application\s+(\S+?)\s*;", content, re.MULTILINE)
+    return match.group(1) if match else ledger.PLACEHOLDER
+
+
+def _inspect_mesh(case_dir: str) -> str:
+    """Best-effort Mesh for the ledger: known mesh tools mentioned in Allrun.
+
+    Several tools chain with '+' (e.g. blockMesh+snappyHexMesh); the
+    placeholder when Allrun mentions none of them.
+    """
+    content = read_file(os.path.join(case_dir, "Allrun"))
+    found = [tool for tool in _MESH_TOOLS if tool in content]
+    return "+".join(found) if found else ledger.PLACEHOLDER
+
+
+# Result verdict v1 markers: a log containing any of these blew up even if
+# the solver ran to completion. Deliberately coarse (spec #28) — the
+# solver-log convergence parser (next spec) upgrades this verdict.
+_DIVERGENCE_MARKERS = ("diverg", "floating point exception", "sigfpe")
+
+
+def _coarse_result(case_dir: str) -> str:
+    """Result verdict, v1 (deliberately coarse — spec #28).
+
+    Only called after check_foam_errors came back clean, so the run's exit
+    status already says success (no ERROR: lines, every log reached its End
+    marker). The basic log check downgrades the verdict to 'diverged' when
+    a log still shows a blow-up marker; otherwise 'converged'. The
+    solver-log convergence parser (next spec) will upgrade this fidelity —
+    the run-states.yml Result vocabulary is the interface it must satisfy.
+    """
+    for file in os.listdir(case_dir):
+        if not file.startswith("log"):
+            continue
+        content = read_file(os.path.join(case_dir, file)).lower()
+        if any(marker in content for marker in _DIVERGENCE_MARKERS):
+            return "diverged"
+    return "converged"
+
+
 def run_allrun_and_collect_errors(
     case_dir: str,
     timeout: int = 3600,
     max_retries: int = 1,
+    run_directory: Optional[str] = None,
 ) -> List[dict]:
-    """Execute the Allrun script and return any error logs (empty = success)."""
+    """Execute the Allrun script and return any error logs (empty = success).
+
+    Ledger side effect (server-owned, spec #28): the case's row follows the
+    run — running while Allrun is in flight, then done plus a coarse Result
+    verdict on success, or debugging (Result pending) on failure. A missing
+    Allrun script never started a run, so the row is left untouched.
+    """
     allrun_file_path = os.path.join(case_dir, "Allrun")
     if not os.path.exists(allrun_file_path):
         return [{"file": "Allrun", "error_content": f"Allrun script not found at {allrun_file_path}"}]
+
+    runs_root = _runs_root(run_directory)
+    ledger.track_running(runs_root, case_dir,
+                         solver=_inspect_solver(case_dir), mesh=_inspect_mesh(case_dir))
 
     out_file = os.path.join(case_dir, "Allrun.out")
     err_file = os.path.join(case_dir, "Allrun.err")
@@ -371,6 +438,7 @@ def run_allrun_and_collect_errors(
 
         error_logs = check_foam_errors(case_dir)
         if len(error_logs) == 0:
+            ledger.track_done(runs_root, case_dir, _coarse_result(case_dir))
             return []
 
         last_error_logs = error_logs
@@ -381,6 +449,7 @@ def run_allrun_and_collect_errors(
             remove_file(out_file)
             remove_numeric_folders(case_dir)
 
+    ledger.track_failed(runs_root, case_dir)
     return last_error_logs
 
 
@@ -695,13 +764,36 @@ def read_mesh_boundaries(case_dir: str) -> dict:
 # SLURM / HPC job management
 # ============================================================================
 
-def submit_slurm_job(script_path: str) -> Tuple[Optional[str], bool, str]:
+# Jobs whose ledger row this server owns: job_id -> (case_dir, runs_root).
+# In-memory is enough — the MCP server that submitted a job is the one whose
+# status tool gets polled for it (server-owned writes, spec #28).
+_SLURM_JOBS: Dict[str, Tuple[str, str]] = {}
+
+
+def submit_slurm_job(
+    script_path: str,
+    case_dir: Optional[str] = None,
+    run_directory: Optional[str] = None,
+) -> Tuple[Optional[str], bool, str]:
+    """Submit a SLURM batch script with sbatch.
+
+    Ledger side effect (server-owned, spec #28): when case_dir is given, a
+    successful submission flips the case's row to running — queued-or-running
+    is one state to the ledger — and registers the job so check_job_status
+    can stamp the outcome later.
+    """
     try:
         result = subprocess.run(["sbatch", script_path], capture_output=True, text=True, check=True)
         output = result.stdout.strip()
         job_id_match = re.search(r'Submitted batch job (\d+)', output)
         if job_id_match:
-            return job_id_match.group(1), True, ""
+            job_id = job_id_match.group(1)
+            if case_dir:
+                runs_root = _runs_root(run_directory)
+                ledger.track_running(runs_root, case_dir,
+                                     solver=_inspect_solver(case_dir), mesh=_inspect_mesh(case_dir))
+                _SLURM_JOBS[job_id] = (case_dir, runs_root)
+            return job_id, True, ""
         return None, False, f"Could not extract job ID from output: {output}"
     except subprocess.CalledProcessError as e:
         return None, False, f"Failed to submit job: {e.stderr}"
@@ -709,17 +801,48 @@ def submit_slurm_job(script_path: str) -> Tuple[Optional[str], bool, str]:
         return None, False, f"Unexpected error: {str(e)}"
 
 
+# squeue states that mean the job is over without a normal completion.
+_SLURM_FAILED_STATES = {"FAILED", "CANCELLED", "TIMEOUT", "NODE_FAIL",
+                        "OUT_OF_MEMORY", "BOOT_FAIL", "DEADLINE", "PREEMPTED"}
+
+
 def check_job_status(job_id: str) -> Tuple[Optional[str], bool, str]:
+    """Check a SLURM job via squeue ('COMPLETED' once it left the queue).
+
+    Ledger side effect (server-owned, spec #28): observing a terminal state
+    of a job submitted through submit_slurm_job stamps its row exactly like
+    a local run — done plus the coarse Result when the case logs are clean,
+    debugging when they are not or the scheduler reports a failure state.
+    """
     try:
         result = subprocess.run(
             ["squeue", "-j", job_id, "--noheader", "-o", "%T"],
             capture_output=True, text=True, check=True,
         )
         status = result.stdout.strip()
-        if status:
-            return status, True, ""
-        return "COMPLETED", True, ""
+        if not status:
+            status = "COMPLETED"
+        _stamp_slurm_outcome(job_id, status)
+        return status, True, ""
     except subprocess.CalledProcessError as e:
         return None, False, f"Failed to check job status: {e.stderr}"
     except Exception as e:
         return None, False, f"Unexpected error: {str(e)}"
+
+
+def _stamp_slurm_outcome(job_id: str, status: str) -> None:
+    """Move a tracked job's ledger row when its SLURM state is terminal."""
+    tracked = _SLURM_JOBS.get(job_id)
+    if tracked is None:
+        return
+    case_dir, runs_root = tracked
+    if status == "COMPLETED":
+        if check_foam_errors(case_dir):
+            ledger.track_failed(runs_root, case_dir)
+        else:
+            ledger.track_done(runs_root, case_dir, _coarse_result(case_dir))
+    elif status in _SLURM_FAILED_STATES:
+        ledger.track_failed(runs_root, case_dir)
+    else:
+        return  # still queued/running — nothing to stamp
+    _SLURM_JOBS.pop(job_id, None)

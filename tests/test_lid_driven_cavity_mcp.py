@@ -331,14 +331,34 @@ async def main():
                 print(f"  - {err}")
             results["simulation_run"] = run["status"] == "success"
 
-            # 5. Mesh boundary inspection
+            # 5. Run ledger: the server stamped the run's row (issue #31).
+            # runs/ is bind-mounted, so the ledger is readable host-side.
+            ledger_path = Path(__file__).parent.parent / "runs" / "ledger.md"
+            ledger_row = None
+            if ledger_path.exists():
+                for line in ledger_path.read_text(encoding="utf-8").splitlines():
+                    cells = [c.strip() for c in line.strip().strip("|").split("|")]
+                    if len(cells) >= 7 and cells[1] == "lid_driven_cavity_mcp_test":
+                        ledger_row = cells
+                        break
+            if ledger_row:
+                status_cell, result_cell = ledger_row[5], ledger_row[6]
+                print(f"ledger: status={status_cell} result={result_cell}")
+                results["ledger"] = (
+                    status_cell == "done" and result_cell in ("converged", "diverged")
+                )
+            else:
+                print(f"ledger: no row for the case in {ledger_path}")
+                results["ledger"] = False
+
+            # 6. Mesh boundary inspection
             boundaries = unwrap(await client.call_tool("read_mesh_boundaries", {"case_dir": case_dir}))
             print(f"boundaries: {boundaries['boundary_names']}")
             results["mesh_boundaries"] = set(boundaries["boundary_names"]) >= {
                 "movingWall", "fixedWalls", "frontAndBack"
             }
 
-            # 6. Visualization (PyVista, deterministic script)
+            # 7. Visualization (PyVista, deterministic script)
             if results["simulation_run"]:
                 foam_file = unwrap_scalar(unwrap(await client.call_tool("ensure_foam_file", {"case_dir": case_dir})))
                 viz = unwrap(await client.call_tool("run_python_script", {

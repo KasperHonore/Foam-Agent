@@ -94,6 +94,61 @@ def track_planned(runs_root: str, case_dir: str) -> Row | None:
     return row
 
 
+def track_running(runs_root: str, case_dir: str,
+                  solver: str = PLACEHOLDER, mesh: str = PLACEHOLDER) -> Row | None:
+    """Run start: flip case_dir's row to running, Result back to pending.
+
+    Re-runs pass through here too, so the verdict of a previous run is
+    cleared while the new one is in flight. Solver/Mesh are stamped from
+    the caller's best-effort inspection of the case; a placeholder never
+    overwrites a previously determined value.
+    """
+    return _transition(runs_root, case_dir, status="running", result="pending",
+                       solver=solver, mesh=mesh)
+
+
+def track_done(runs_root: str, case_dir: str, result: str) -> Row | None:
+    """Run completed: stamp done plus the Result verdict (converged/diverged)."""
+    return _transition(runs_root, case_dir, status="done", result=result)
+
+
+def track_failed(runs_root: str, case_dir: str) -> Row | None:
+    """Run failed: flip to debugging, Result stays pending — an in-flight
+    rescue by the debugger loop is visible as such."""
+    return _transition(runs_root, case_dir, status="debugging", result="pending")
+
+
+def _transition(runs_root: str, case_dir: str, *, status: str,
+                result: str | None = None, solver: str = PLACEHOLDER,
+                mesh: str = PLACEHOLDER) -> Row | None:
+    """Server-owned lifecycle write: update case_dir's row in place.
+
+    A case that was never resolved through resolve_case_dir (direct tool
+    usage) is adopted with a fresh row, so the record stays complete no
+    matter who drives the run. Returns None for out-of-tree case dirs,
+    like track_planned.
+    """
+    case = _case_key(runs_root, case_dir)
+    if case is None:
+        return None
+    with _LOCK:
+        rows = read_rows(runs_root)
+        row = next((r for r in rows if r.case == case), None)
+        if row is None:
+            next_id = max((int(r.id) for r in rows if r.id.isdigit()), default=0) + 1
+            row = Row(id=f"{next_id:04d}", case=case, created=date.today().isoformat())
+            rows.insert(0, row)  # newest first
+        row.status = status
+        if result is not None:
+            row.result = result
+        if solver != PLACEHOLDER:
+            row.solver = solver
+        if mesh != PLACEHOLDER:
+            row.mesh = mesh
+        _write(runs_root, rows)
+    return row
+
+
 def read_rows(runs_root: str) -> list[Row]:
     path = os.path.join(runs_root, LEDGER_BASENAME)
     if not os.path.exists(path):
