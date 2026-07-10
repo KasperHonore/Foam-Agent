@@ -10,3 +10,5 @@ database/faiss/**/*.faiss filter=lfs diff=lfs merge=lfs -text
 database/faiss/**/*.pkl filter=lfs diff=lfs merge=lfs -text
 examples/tandem_wing.msh filter=lfs diff=lfs merge=lfs -text
 *.sh text eol=lf
+# Captured OpenFOAM logs used as parser fixtures: keep bytes exactly as harvested
+tests/fixtures/convergence/** -text

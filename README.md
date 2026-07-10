@@ -21,7 +21,7 @@ Your agent harness            Claude Code / Cursor / Codex / OpenCode / pi
  does the CFD reasoning)
         │  MCP (HTTP)
         ▼
-foamagent-mcp in Docker       15 mechanical tools, ZERO API keys:
+foamagent-mcp in Docker       17 mechanical tools, ZERO API keys:
 (the HANDS)                   RAG over v10 tutorials (local embeddings),
                               case file I/O, OpenFOAM execution, error
                               extraction, GMSH/PyVista scripts, SLURM
@@ -183,6 +183,7 @@ Validated by autonomous end-to-end shakedowns: steady simpleFoam (backward-facin
 | `run_openfoam_command` | One-off utilities: `checkMesh`, `gmshToFoam`, `decomposePar`, ... |
 | `run_python_script` | Server-side Python (PyVista, GMSH) with stdout capture |
 | `ensure_foam_file` / `read_mesh_boundaries` | Visualization marker; patch names/types |
+| `parse_solver_log` | Typed convergence facts from a solver log — residuals, Courant, continuity, completion — plus a verdict with evidence |
 | `translate_case_to_esi` | Rules-based Foundation→ESI translation (best-effort) |
 | `submit_slurm_job` / `slurm_job_status` | HPC job submission and polling |
 | `set_run_note` | Annotate/archive a run in `runs/ledger.md` — the only skill-side ledger write |

@@ -11,6 +11,7 @@ guided by the portable skills/subagents in agents/ at the repo root.
 """
 
 import asyncio
+import dataclasses
 import json
 import os
 import sys
@@ -20,9 +21,10 @@ from typing import Dict, List, Optional
 from fastmcp import FastMCP, Context
 from pydantic import BaseModel, Field
 
-# Make src/ importable (mechanics.py, translation/)
+# Make src/ importable (mechanics.py, convergence.py, translation/)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import convergence
 import mechanics
 from translation.esi_translator import ESITranslator
 
@@ -50,6 +52,11 @@ Recommended workflow:
    via write_case_file, run_case again (iterate).
 6. Optional: run_python_script for PyVista visualization (ensure_foam_file
    first) or GMSH mesh generation.
+
+After (or during) a run, parse_solver_log turns the solver log into typed
+convergence facts — per-field residuals, Courant numbers, continuity errors,
+completion, and a verdict with evidence. Prefer it over reading raw logs:
+the numbers are computed, never guessed, and cost the same on any log size.
 
 The run ledger (runs/ledger.md) tracks every run automatically as a side
 effect of the tools above. set_run_note is the ONLY sanctioned skill-side
@@ -403,6 +410,70 @@ async def read_mesh_boundaries(
     conditions you plan to write in 0/.
     """
     return mechanics.read_mesh_boundaries(_abs_case_dir(case_dir))
+
+
+# ============================================================================
+# Solver-log convergence parsing (deterministic, key-free)
+# ============================================================================
+
+class TimeProgressModel(BaseModel):
+    first_time: Optional[float] = Field(description="First 'Time =' value in the log (None before the first step)")
+    latest_time: Optional[float] = Field(description="Latest 'Time =' value reached")
+    end_time: Optional[float] = Field(description="endTime target from system/controlDict (None when unreadable)")
+
+
+class FieldResidualModel(BaseModel):
+    field: str = Field(description="Field name as the solver reports it (e.g. 'Ux', 'p')")
+    first_initial: float = Field(description="Initial residual of the field's first solve")
+    last_initial: float = Field(description="Initial residual of the field's last solve")
+    last_final: float = Field(description="Final residual of the field's last solve")
+    worst_initial: float = Field(description="Largest initial residual seen for the field")
+    worst_initial_time: Optional[float] = Field(description="Solver time of that worst initial residual (None before the first step)")
+
+
+class CourantModel(BaseModel):
+    max: float = Field(description="Largest 'max' Courant number in the log")
+    max_time: Optional[float] = Field(description="Solver time where that maximum was first reached")
+    last_mean: float = Field(description="'mean' value of the last Courant line")
+    last_max: float = Field(description="'max' value of the last Courant line")
+
+
+class SolverLogResponse(BaseModel):
+    solver: str = Field(description="Solver that wrote the log (the log's Exec entry)")
+    log_file: str = Field(description="Name of the log file that was parsed")
+    completed: bool = Field(description="True when the log reached its 'End' marker")
+    time: TimeProgressModel = Field(description="Time progress vs the controlDict endTime target")
+    residuals: List[FieldResidualModel] = Field(description="Per-field residual summary, in first-appearance order")
+    courant: Optional[CourantModel] = Field(description="Courant number summary (None when the log has no Courant lines)")
+    cumulative_continuity: Optional[float] = Field(description="Last cumulative time-step continuity error")
+    fatal_errors: List[str] = Field(description="Extracted FOAM FATAL (IO) ERROR blocks, verbatim")
+    verdict: str = Field(description="'converged', 'diverged', 'incomplete' or 'error'")
+    evidence: List[str] = Field(description="Human-readable strings naming what drove the verdict")
+
+
+@mcp.tool(name="parse_solver_log")
+async def parse_solver_log(
+    case_dir: str = Field(description="Case directory containing the solver log"),
+    log_file: str = Field(default="", description="Explicit log file name (e.g. 'log.icoFoam'); default: log.<application> with the application read from system/controlDict"),
+    ctx: Context = None,
+) -> SolverLogResponse:
+    """Parse a case's solver log into typed convergence facts plus a verdict.
+
+    Deterministic and key-free: per-field residuals, Courant numbers,
+    continuity errors, time progress and completion are computed from the
+    log — never guessed — and the verdict (converged / diverged /
+    incomplete / error) comes with evidence strings naming what drove it.
+    Works on partial, in-flight logs too (verdict 'incomplete' plus time
+    progress). Built-in thresholds are deliberately conservative defaults:
+    converged needs every field's last final residual under 1e-4; residuals
+    at/above 1e6 or a max Courant at/above 100 read as divergence. Judge
+    anything near those lines yourself before trusting a run.
+    """
+    case_dir = _require_case_dir(case_dir)
+    analysis = await asyncio.to_thread(
+        convergence.parse_solver_log, case_dir, log_file or None
+    )
+    return SolverLogResponse(**dataclasses.asdict(analysis))
 
 
 # ============================================================================
