@@ -53,8 +53,10 @@ Typical questions, all answerable without opening a single log file:
 When the user wants more than the row holds ("WHY did it diverge?", "what
 was the final residual?"), that is the cue to open the case's own artifacts:
 `runs/<case>/log.<solver>` (the tail — errors and final residuals are at the
-end), `Allrun.out` / `Allrun.err`, or `postProcessing/`. Give the ledger's
-answer first, then dig.
+end), `Allrun.out` / `Allrun.err`, or `postProcessing/`. For force-coefficient
+detail, `parse_force_coefficients(case_dir)` beats reading dat files: typed
+Cd/Cl/Cm with tail-window statistics, and it re-stamps the row's Key result
+as a side effect. Give the ledger's answer first, then dig.
 
 ## 3. Notes and archiving — through `set_run_note` only
 
@@ -85,12 +87,20 @@ Facts to respect:
 
 "Compare Cd across the cylinder runs" → collect the matching rows and put
 their Key result, Result and Solver columns side by side — that is the
-ledger-level answer. Be honest about fidelity: stamping is deliberately
-coarse for now (exit status plus a blow-up scan feed the Result verdict,
-and Key result is typically still `-`); the solver-log convergence parser
-(the next spec) will improve it. When Key result is empty and the user
-wants real numbers, offer the log dive: extract the quantity from each
-case's logs or `postProcessing/` — an on-demand read, invited by the user.
+ledger-level answer. Key result is filled by the server when
+`parse_force_coefficients` runs against a case with forceCoeffs output: a
+compact `Cd=<x> Cl=<y> (tail mean)` stamp (machine-owned, like every cell
+but Notes). Be honest about fidelity: the cell is a tail-window mean, not
+the whole story — when the user wants detail (the series, the window,
+min/max spread, the reference values behind the normalization), call
+`parse_force_coefficients` on the case instead of reading dat files by
+eye. A `-` in Key result means nobody has parsed that case's coefficients
+yet: calling the tool back-fills the cell when forceCoeffs output exists;
+a case with no such output cannot be compared on Cd at all — the foam
+skill's forces reference (its `references/forces.md`) carries the v10
+recipe to produce it. The Result verdict comes from the solver-log convergence
+parser and is conservative by design (`converged` only when the parser
+says so; anything else stamps `diverged`).
 
 ## 5. The zero-token alternative (mention when relevant)
 

@@ -75,7 +75,12 @@ For steady solvers (`simpleFoam`, ...):
 
 - Include ONLY what is needed to run: `application`, time controls
   (`startTime`, `endTime`, `deltaT`), write controls.
-- Do NOT include post-processing function objects.
+- Do NOT include post-processing function objects during initial case
+  generation — with ONE sanctioned exception: when the user's question is
+  forces or force coefficients (drag, lift, Cd/Cl/Cm), add a `forceCoeffs`
+  function object to the `functions` block, because on Foundation v10 the
+  reliable path is the object being active during the solver run. The
+  worked block and the recipe live in [forces.md](forces.md).
 - `application` must be the chosen solver binary name.
 
 ## Using the similar-case reference

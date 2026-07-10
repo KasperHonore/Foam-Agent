@@ -105,5 +105,7 @@ Verify before telling the user it converged:
   report WHICH evidence you judged, not just the verdict word.
 
 Every run is recorded in `runs/ledger.md` automatically; its Result column
-is stamped from the run lifecycle. Run-history questions belong to the
+is stamped from the run lifecycle, and its Key result cell is filled by
+`parse_force_coefficients` when the case has forceCoeffs output (tail-mean
+Cd/Cl — see [forces.md](forces.md)). Run-history questions belong to the
 foam-runs skill.
