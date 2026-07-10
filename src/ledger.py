@@ -149,6 +149,63 @@ def _transition(runs_root: str, case_dir: str, *, status: str,
     return row
 
 
+def set_note(runs_root: str, run_id: str, *, note: str | None = None,
+             archive: bool | None = None) -> Row:
+    """The one skill-side ledger write: Notes plus archive/unarchive.
+
+    Rows are keyed by their zero-padded ID — the handle a skill reads off
+    the ledger (digit-only IDs are normalized, so '3' finds '0003').
+    The sanctioned surface is exactly this:
+
+    - note (None = leave alone) replaces the Notes cell, normalized so it
+      round-trips through the table format; every other cell is untouched.
+    - archive=True flips Status to archived; a still-pending Result is
+      stamped abandoned ("owner stopped pursuing this").
+    - archive=False restores Status to done and leaves Result as it is —
+      abandoned stays abandoned until a new run overwrites it via the
+      lifecycle. Only archived (or already-done) rows may be unarchived:
+      anything else would let a skill set Status at will.
+
+    Raises ValueError — with the ledger left untouched — for an unknown ID
+    or an illegal unarchive.
+    """
+    key = run_id.strip()
+    if key.isdigit():
+        key = f"{int(key):04d}"
+    with _LOCK:
+        rows = read_rows(runs_root)
+        row = next((r for r in rows if r.id == key), None)
+        if row is None:
+            raise ValueError(f"No ledger row with ID '{key}' in "
+                             f"{os.path.join(runs_root, LEDGER_BASENAME)}")
+        if archive is True:
+            row.status = "archived"
+            if row.result == "pending":
+                row.result = "abandoned"  # owner stopped pursuing this
+        elif archive is False:
+            if row.status not in ("archived", "done"):
+                raise ValueError(
+                    f"Run {key} is not archived (status: {row.status}); "
+                    "unarchiving cannot be used to set a status"
+                )
+            row.status = "done"  # Result stays — abandoned until a new run
+        if note is not None:
+            row.notes = _normalize_note(note)
+        _write(runs_root, rows)
+    return row
+
+
+def _normalize_note(note: str) -> str:
+    """Fold a note into the form the table parser reads back unchanged.
+
+    Raw newlines would break the row and read_rows rejoins in-cell pipes
+    with ' | ', so both are normalized to that form up front: the stored
+    cell is a fixpoint of write -> read_rows.
+    """
+    flat = " ".join(note.strip().splitlines())
+    return " | ".join(part.strip() for part in flat.split("|"))
+
+
 def read_rows(runs_root: str) -> list[Row]:
     path = os.path.join(runs_root, LEDGER_BASENAME)
     if not os.path.exists(path):

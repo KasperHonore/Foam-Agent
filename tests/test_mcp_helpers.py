@@ -91,3 +91,38 @@ def test_write_case_file_permission_error_is_actionable(tmp_path, monkeypatch):
             relative_path="system/controlDict",
             content="x",
         ))
+
+
+# ---------------------------------------------------------------------------
+# set_run_note (#32): the one skill-side ledger write
+# ---------------------------------------------------------------------------
+
+def test_set_run_note_is_registered_as_tool_sixteen():
+    import asyncio
+
+    names = {t.name for t in asyncio.run(fs.mcp.list_tools())}
+    assert "set_run_note" in names
+    assert len(names) == 16  # the ledger write joins the 15 existing tools
+
+
+def test_set_run_note_returns_the_updated_row(tmp_path, monkeypatch):
+    import asyncio
+
+    monkeypatch.setattr(fs.mechanics, "RUNS_DIR", tmp_path)
+    fs.mechanics.resolve_case_dir("cavity")
+
+    fn = getattr(fs.set_run_note, "fn", fs.set_run_note)
+    resp = asyncio.run(fn(id="0001", note="looks good", archive=None))
+
+    assert (resp.id, resp.case, resp.status) == ("0001", "cavity", "planned")
+    assert resp.notes == "looks good"
+
+
+def test_set_run_note_surfaces_unknown_id_as_typed_error(tmp_path, monkeypatch):
+    import asyncio
+
+    monkeypatch.setattr(fs.mechanics, "RUNS_DIR", tmp_path)
+
+    fn = getattr(fs.set_run_note, "fn", fs.set_run_note)
+    with pytest.raises(ValueError, match="0042"):
+        asyncio.run(fn(id="0042", note="ghost", archive=None))

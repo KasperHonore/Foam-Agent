@@ -203,6 +203,19 @@ def resolve_case_dir(
     return resolved
 
 
+def set_run_note(run_id: str, note: Optional[str] = None,
+                 archive: Optional[bool] = None,
+                 run_directory: Optional[str] = None) -> ledger.Row:
+    """The one sanctioned skill-side ledger write (spec #28, issue #32).
+
+    Sets a row's Notes cell and/or archives/unarchives it, keyed by the
+    row's ledger ID. Everything else stays machine-owned. Raises ValueError
+    (ledger untouched) for an unknown ID or an illegal transition.
+    """
+    return ledger.set_note(_runs_root(run_directory), run_id,
+                           note=note, archive=archive)
+
+
 # ============================================================================
 # OpenFOAM execution and log parsing
 # ============================================================================

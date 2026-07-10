@@ -71,6 +71,7 @@ Switch the config files above to stdio (`"command": "foamagent-mcp"`) if you pre
 | `read_mesh_boundaries` | Patch names/types from `constant/polyMesh/boundary` |
 | `translate_case_to_esi` | Rules-based Foundation→ESI translation |
 | `submit_slurm_job` / `slurm_job_status` | HPC job submission and polling |
+| `set_run_note` | Annotate/archive a run in `runs/ledger.md` — the only skill-side ledger write |
 
 ## Configuration
 
