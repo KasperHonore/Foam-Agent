@@ -51,6 +51,10 @@ Recommended workflow:
 6. Optional: run_python_script for PyVista visualization (ensure_foam_file
    first) or GMSH mesh generation.
 
+The run ledger (runs/ledger.md) tracks every run automatically as a side
+effect of the tools above. set_run_note is the ONLY sanctioned skill-side
+ledger write (annotate a run, archive/unarchive it) — never edit the file.
+
 IMPORTANT: always create and edit case files through write_case_file (not
 your local file tools) — the server may run in a container whose filesystem
 is where the simulation actually executes.
@@ -470,6 +474,39 @@ async def slurm_job_status(
     if not ok:
         raise RuntimeError(error)
     return status
+
+
+# ============================================================================
+# Run ledger
+# ============================================================================
+
+class RunNoteResponse(BaseModel):
+    id: str = Field(description="Zero-padded ledger ID of the updated row")
+    case: str = Field(description="Case key (case directory relative to the runs root)")
+    status: str = Field(description="Row Status after the write")
+    result: str = Field(description="Row Result after the write")
+    notes: str = Field(description="Notes cell after the write (as stored)")
+
+
+@mcp.tool(name="set_run_note")
+async def set_run_note(
+    id: str = Field(description="Run ID from the runs/ledger.md table (zero-padded, e.g. '0003'; unpadded '3' is accepted)"),
+    note: Optional[str] = Field(default=None, description="Replaces the row's Notes cell ('' clears it); omit to leave the note unchanged"),
+    archive: Optional[bool] = Field(default=None, description="true archives the run (Status archived; a pending Result is stamped abandoned), false unarchives it (Status back to done); omit to leave Status unchanged"),
+    ctx: Context = None,
+) -> RunNoteResponse:
+    """Annotate a run in the ledger and/or archive/unarchive it.
+
+    This is the ONLY sanctioned skill-side write to runs/ledger.md — never
+    edit the file directly. Notes plus archive/unarchive are the whole
+    surface: every other cell (Status, Result, Solver, ...) stays owned by
+    the server's run lifecycle. Unarchiving restores Status to done and
+    leaves Result as it is. An unknown ID, or unarchiving a run that is not
+    archived, fails with the ledger left untouched.
+    """
+    row = await asyncio.to_thread(mechanics.set_run_note, id, note, archive)
+    return RunNoteResponse(id=row.id, case=row.case, status=row.status,
+                           result=row.result, notes=row.notes)
 
 
 if __name__ == "__main__":

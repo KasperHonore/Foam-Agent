@@ -183,6 +183,7 @@ Validated by autonomous end-to-end shakedowns: steady simpleFoam (backward-facin
 | `ensure_foam_file` / `read_mesh_boundaries` | Visualization marker; patch names/types |
 | `translate_case_to_esi` | Rules-based Foundation→ESI translation (best-effort) |
 | `submit_slurm_job` / `slurm_job_status` | HPC job submission and polling |
+| `set_run_note` | Annotate/archive a run in `runs/ledger.md` — the only skill-side ledger write |
 
 See [src/mcp/README.md](src/mcp/README.md) for details and local (non-Docker) installation.
 
