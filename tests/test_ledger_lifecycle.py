@@ -1,9 +1,9 @@
 """Unit tests for the run-lifecycle ledger transitions (issue #31).
 
 Executing a case follows its ledger row: planned/debugging -> running when
-the run starts, then done plus a coarse Result verdict on success, or back
-to debugging (Result pending) on failure. SLURM submissions move through
-the same states. These tests drive the mechanics layer against a temporary
+the run starts, then done plus a Result stamped from the convergence
+parser's verdict on success (issue #40), or back to debugging (Result
+pending) on failure. SLURM submissions move through the same states. These tests drive the mechanics layer against a temporary
 runs directory with fake run scripts and a stubbed subprocess boundary
 (prior art: test_run_sourced.py) and assert on the ledger file itself —
 the externally observable contract. Key-free, no OpenFOAM, no server.
@@ -41,12 +41,46 @@ runApplication icoFoam
 
 # Every real OpenFOAM log opens with this banner — its "floating point
 # exception"/"sigFpe" words must never read as a blow-up (shakedown regression:
-# the coarse verdict stamped every successful run diverged).
+# the v1 verdict stamped every successful run diverged; permanent policy since).
 SIGFPE_BANNER = "sigFpe : Enabling floating point exception trapping (FOAM_SIGFPE).\n"
 
-GOOD_LOG = SIGFPE_BANNER + "Time = 0.5\nEnd\n"
-INCOMPLETE_LOG = SIGFPE_BANNER + "Time = 0.1\nCourant Number max: 894.2\n"  # no End marker
-DIVERGING_LOG = SIGFPE_BANNER + "Time = 0.5\nsolution diverging\nEnd\n"  # completed but blew up
+# Parser-realistic fake solver logs: genuine banner plus minimal real v10
+# residual/time lines (line formats cribbed from the captured fixtures under
+# tests/fixtures/convergence/), so parse_solver_log produces the intended
+# verdicts. GOOD_LOG carries realistic converged residual lines — the
+# converged rule is "completed AND every field's last final residual < 1e-4",
+# which a log with zero residual lines would pass vacuously.
+GOOD_LOG = SIGFPE_BANNER + """\
+Time = 0.5s
+
+Courant Number mean: 0.222158 max: 0.852134
+smoothSolver:  Solving for Ux, Initial residual = 2.3091e-07, Final residual = 2.3091e-07, No Iterations 0
+DICPCG:  Solving for p, Initial residual = 8.63844e-07, Final residual = 8.63844e-07, No Iterations 0
+End
+"""
+
+INCOMPLETE_LOG = SIGFPE_BANNER + """\
+Time = 0.1s
+
+Courant Number mean: 0.22117 max: 0.8517
+smoothSolver:  Solving for Ux, Initial residual = 0.000274837, Final residual = 6.41057e-06, No Iterations 7
+"""  # no End marker — the run stopped early
+
+DIVERGING_LOG = SIGFPE_BANNER + """\
+Time = 0.01s
+
+Courant Number mean: 45.8817 max: 1250.73
+smoothSolver:  Solving for Ux, Initial residual = 2.51004e+08, Final residual = 9.23117e+07, No Iterations 1000
+End
+"""  # completed but blew up: residual explosion and Courant blow-up
+
+UNCONVERGED_LOG = SIGFPE_BANNER + """\
+Time = 0.5s
+
+Courant Number mean: 0.0976825 max: 0.585607
+DICPCG:  Solving for p, Initial residual = 0.428925, Final residual = 0.0103739, No Iterations 22
+End
+"""  # completed cleanly, but p's last final residual is above the 1e-4 threshold
 
 
 def _rows(runs_root: Path) -> list:
@@ -128,13 +162,28 @@ def test_successful_run_stamps_done_and_converged(tmp_path, fake_solver):
     assert row["result"] == "converged"
 
 
-def test_completed_run_with_blow_up_marker_stamps_diverged(tmp_path, fake_solver):
+def test_completed_run_that_blew_up_stamps_diverged(tmp_path, fake_solver):
     case_dir = _make_case(tmp_path)
     fake_solver(tmp_path, "cavity", {"log.icoFoam": DIVERGING_LOG})
 
     errors = mechanics.run_allrun_and_collect_errors(case_dir, run_directory=str(tmp_path))
 
     assert errors == []  # ran to completion — the verdict is what flags it
+    row = _row(tmp_path, "cavity")
+    assert row["status"] == "done"
+    assert row["result"] == "diverged"
+
+
+def test_completed_run_with_residuals_above_threshold_stamps_diverged(tmp_path, fake_solver):
+    # The parser calls this flavor 'incomplete' (completed, but a final
+    # residual is not under the converged threshold); the ledger maps every
+    # non-converged verdict to diverged — it must never overstate trust.
+    case_dir = _make_case(tmp_path)
+    fake_solver(tmp_path, "cavity", {"log.icoFoam": UNCONVERGED_LOG})
+
+    errors = mechanics.run_allrun_and_collect_errors(case_dir, run_directory=str(tmp_path))
+
+    assert errors == []
     row = _row(tmp_path, "cavity")
     assert row["status"] == "done"
     assert row["result"] == "diverged"
@@ -303,6 +352,25 @@ def test_slurm_completion_observed_via_status_stamps_done(tmp_path, fake_slurm):
     row = _row(tmp_path, "cavity")
     assert row["status"] == "done"
     assert row["result"] == "converged"
+
+
+def test_slurm_completion_with_unconverged_residuals_stamps_diverged(tmp_path, fake_slurm):
+    # SLURM completion stamps through the same parser-backed mapping as a
+    # local run: completed-but-above-threshold is not converged.
+    case_dir = _make_case(tmp_path)
+    script = Path(case_dir) / "submit_job.slurm"
+    script.write_text("#!/bin/sh\n./Allrun\n")
+    job_id, _, _ = mechanics.submit_slurm_job(
+        str(script), case_dir=case_dir, run_directory=str(tmp_path)
+    )
+    (Path(case_dir) / "log.icoFoam").write_text(UNCONVERGED_LOG)
+
+    status, ok, _ = mechanics.check_job_status(job_id)  # left the queue
+
+    assert (status, ok) == ("COMPLETED", True)
+    row = _row(tmp_path, "cavity")
+    assert row["status"] == "done"
+    assert row["result"] == "diverged"
 
 
 def test_slurm_job_that_left_broken_logs_flips_to_debugging(tmp_path, fake_slurm):
