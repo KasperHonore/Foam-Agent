@@ -20,6 +20,7 @@ Nothing in this repo needs an LLM API key. (The original self-contained LangGrap
 - **MCP registration is committed per tool:** `.mcp.json` (Claude Code), `.cursor/mcp.json`, `opencode.json`, `.codex/config.toml` — all pointing at `http://localhost:7860/mcp` (start it with Docker, see `src/mcp/README.md`).
 - **Universal fallback:** if your tool auto-discovers none of the above, read `agents/skills/foam/SKILL.md` when the user asks for a CFD simulation and follow it; subagent roles are in `agents/subagents/` — follow them inline.
 - **Server not responding?** Follow `agents/skills/foam-setup/SKILL.md` — it diagnoses and starts the Dockerized MCP server (no API key needed). `python scripts/doctor.py` runs the same checks deterministically (read-only, prints fix commands).
+- **Run-history questions?** Follow `agents/skills/foam-runs/SKILL.md` — it answers "list my runs" / "what happened to X?" from the run ledger (`runs/ledger.md`), with notes and archiving via the `set_run_note` tool. `python scripts/runs.py` is the zero-token equivalent; `python scripts/ledger_check.py` verifies/repairs the ledger.
 
 ## First run? Onboard the user
 
