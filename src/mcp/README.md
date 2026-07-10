@@ -2,7 +2,7 @@
 
 Exposes the **mechanical** side of OpenFOAM CFD simulation as [MCP](https://modelcontextprotocol.io/) tools: tutorial retrieval (RAG over Foundation OpenFOAM v10 tutorials), case file I/O, simulation execution, error extraction, Python script execution (GMSH meshing, PyVista visualization) and SLURM job management.
 
-**No LLM provider, no API key.** All CFD *reasoning* — planning the case, writing OpenFOAM dictionaries, diagnosing errors — is done by the AI agent that calls these tools, guided by the portable skills/subagents in [`agents/`](../../agents) at the repo root. Whatever agent harness you already use (Claude Code, Cursor, Codex, OpenCode, pi, ...) supplies the intelligence; this server supplies the hands.
+**No LLM provider, no API key.** All CFD *reasoning* — planning the case, writing OpenFOAM dictionaries, diagnosing errors — is done by the AI agent that calls these tools, guided by the portable skills/subagents in [`agents/`](../../agents) at the repo root. Whatever agent harness you already use (Claude Code, Cursor, Codex, OpenCode, ...) supplies the intelligence; this server supplies the hands.
 
 ```
 Your agent harness  (the brain — its model does the CFD reasoning)

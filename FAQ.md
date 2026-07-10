@@ -2,7 +2,7 @@
 
 ### What do I need to run this?
 
-Docker and an AI coding CLI you already use (Claude Code, Cursor, Codex, OpenCode, pi). That's it — the intelligence comes from your existing AI subscription, the container brings OpenFOAM and the tutorial database.
+Docker and an AI coding CLI you already use (Claude Code, Cursor, Codex, OpenCode). That's it — the intelligence comes from your existing AI subscription, the container brings OpenFOAM and the tutorial database.
 
 ### Do I need an API key?
 
@@ -39,7 +39,7 @@ Yes, two ways: drop a GMSH `.msh` file at the repo root and mention it in your p
 
 ### Which AI CLIs are supported?
 
-MCP registration and skills are committed for **Claude Code** (`.mcp.json`, `.claude/`), **Cursor** (`.cursor/`), **Codex** (`.codex/`), **OpenCode** (`opencode.json`, `.opencode/`), and **pi** (`.pi/`). Any other MCP-capable agent works too: point it at `http://localhost:7860/mcp` and it will find the skills via `AGENTS.md`.
+MCP registration and skills are committed for **Claude Code** (`.mcp.json`, `.claude/`), **Cursor** (`.cursor/`), **Codex** (`.codex/`), and **OpenCode** (`opencode.json`, `.opencode/`). Any other MCP-capable agent works too: point it at `http://localhost:7860/mcp` and it will find the skills via `AGENTS.md`. (pi is not supported: it has no MCP client, so the server would have no way to lend it hands.)
 
 ### Do I need a GPU?
 
