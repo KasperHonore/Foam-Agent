@@ -52,9 +52,12 @@ that is not a hang.
    `case_solver` values.
 2. From the user requirement, decide: a short `case_name` (snake_case), and a
    domain, category and solver **chosen from those lists**.
-3. Call `find_similar_case` with these values. Inspect `selected_case` and its
-   `dir_structure`: judge yourself how well it matches (same solver? same
-   physics?) and decide which parts of the reference to trust.
+3. Call `find_similar_case` with these values. It can take tens of seconds
+   even when the embedding model is warm (two CPU embedding passes per call) —
+   that is normal, not a hang. Inspect `selected_case` and the returned
+   `dir_structure` (a top-level field, also mirrored into
+   `selected_case.dir_structure`): judge yourself how well it matches (same
+   solver? same physics?) and decide which parts of the reference to trust.
 4. Decompose into a file list (the case's `dir_structure`): every file you will
    generate, as `folder/file` pairs (`system/controlDict`, `0/U`, ...). Rules:
    - Generate ALL files the solver needs (check the similar case's structure
