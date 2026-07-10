@@ -53,3 +53,25 @@ def test_require_case_dir_returns_abspath_when_exists(tmp_path):
 def test_require_case_dir_raises_when_missing(tmp_path):
     with pytest.raises(ValueError, match="does not exist"):
         fs._require_case_dir(str(tmp_path / "nope"))
+
+
+# ---------------------------------------------------------------------------
+# write_case_file
+# ---------------------------------------------------------------------------
+
+def test_write_case_file_permission_error_is_actionable(tmp_path, monkeypatch):
+    # Stale root-owned case dirs (left by pre-non-root images) surface as bare
+    # EACCES; the tool must translate that into an actionable message (#16).
+    import asyncio
+
+    def deny(path, content):
+        raise PermissionError(13, "Permission denied", path)
+
+    monkeypatch.setattr(fs.mechanics, "save_file", deny)
+    fn = getattr(fs.write_case_file, "fn", fs.write_case_file)
+    with pytest.raises(PermissionError, match="chown -R openfoam:openfoam"):
+        asyncio.run(fn(
+            case_dir=str(tmp_path),
+            relative_path="system/controlDict",
+            content="x",
+        ))

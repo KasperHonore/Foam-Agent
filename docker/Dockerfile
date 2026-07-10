@@ -67,13 +67,18 @@ RUN chmod +x /usr/local/bin/foamagent-entrypoint.sh
 # first write fails with EACCES. Hand the cache tree to the runtime user.
 RUN mkdir -p /home/openfoam/.cache && chown -R openfoam:openfoam /home/openfoam/.cache
 
-# Drop root for runtime. OpenFOAM v10 refuses #codeStream / dynamic-code
+# Runtime user story. The MCP server and the solvers it launches must run as
+# the non-root 'openfoam' user: OpenFOAM v10 refuses #codeStream / dynamic-code
 # compilation when it detects the root user (isAdministrator() check in
 # dynamicCode.C), so cases using codeStream — the cylinder tutorial,
-# codedFixedValue BCs, etc. — fail as root. Every root-only build step is done
-# above; the MCP server and the solvers it launches now run as the non-root
-# 'openfoam' user the base image provides. Fixes #3.
-USER openfoam
+# codedFixedValue BCs, etc. — fail as root (#3). But bind-mounted runs/ dirs
+# can carry root-owned files left by pre-non-root images, which the openfoam
+# user cannot write (#16). So the container starts as root and the entrypoint
+# repairs runs/ ownership, then immediately drops to 'openfoam' via setpriv —
+# every process after that first block is non-root. Side effect: a plain
+# `docker exec` lands in a root shell; use `docker exec -u openfoam` to match
+# the server's user.
+USER root
 
 WORKDIR /home/openfoam/
 

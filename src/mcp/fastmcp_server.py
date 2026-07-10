@@ -197,9 +197,19 @@ async def write_case_file(
     """
     case_dir = _abs_case_dir(case_dir)
     path = _safe_join(case_dir, relative_path)
-    mechanics.save_file(path, content)
-    if executable:
-        os.chmod(path, 0o777)
+    try:
+        mechanics.save_file(path, content)
+        if executable:
+            os.chmod(path, 0o777)
+    except PermissionError as exc:
+        raise PermissionError(
+            f"Permission denied writing {path}. The case directory likely contains "
+            "files owned by another user — typically left by a pre-non-root (root) "
+            "Foam-Agent image. Fix: recreate the container from the latest image "
+            "(its entrypoint repairs runs/ ownership at startup), or run "
+            "'docker exec -u root foamagent-mcp chown -R openfoam:openfoam "
+            "/home/openfoam/Foam-Agent/runs', or use a fresh case name."
+        ) from exc
     return WriteFileResponse(path=path, bytes_written=len(content.encode("utf-8")))
 
 
