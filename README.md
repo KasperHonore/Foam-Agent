@@ -44,6 +44,8 @@ The intelligence comes from the AI subscription you already pay for. The contain
 
 ## Quick start
 
+**One command instead of the steps below** (needs [uv](https://docs.astral.sh/uv/)): `uv run https://raw.githubusercontent.com/KasperHonore/Foam-Agent/main/scripts/init.py` — checks prerequisites, clones the latest release, and hands off to onboarding. The manual path stays right here as the fallback.
+
 **1. Clone and start the server** (Docker required; FAISS indices are baked into the image):
 
 ```bash
