@@ -390,10 +390,14 @@ def _inspect_mesh(case_dir: str) -> str:
     return "+".join(found) if found else ledger.PLACEHOLDER
 
 
-# Result verdict v1 markers: a log containing any of these blew up even if
-# the solver ran to completion. Deliberately coarse (spec #28) — the
+# Result verdict v1 markers: a log line containing any of these blew up even
+# if the solver ran to completion. Deliberately coarse (spec #28) — the
 # solver-log convergence parser (next spec) upgrades this verdict.
 _DIVERGENCE_MARKERS = ("diverg", "floating point exception", "sigfpe")
+# ...but every OpenFOAM log opens with the trap-setup banner
+# "sigFpe : Enabling floating point exception trapping (FOAM_SIGFPE)." —
+# lines announcing the trap are not evidence of a blow-up.
+_BANNER_MARKER = "enabling floating point exception trapping"
 
 
 def _coarse_result(case_dir: str) -> str:
@@ -409,9 +413,11 @@ def _coarse_result(case_dir: str) -> str:
     for file in os.listdir(case_dir):
         if not file.startswith("log"):
             continue
-        content = read_file(os.path.join(case_dir, file)).lower()
-        if any(marker in content for marker in _DIVERGENCE_MARKERS):
-            return "diverged"
+        for line in read_file(os.path.join(case_dir, file)).lower().splitlines():
+            if _BANNER_MARKER in line:
+                continue
+            if any(marker in line for marker in _DIVERGENCE_MARKERS):
+                return "diverged"
     return "converged"
 
 
