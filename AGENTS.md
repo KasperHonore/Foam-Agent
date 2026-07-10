@@ -63,6 +63,8 @@ src/
                        # Courant/continuity facts and a verdict with evidence
   meshcheck.py         # structured checkMesh assessment: mesh census, typed
                        # per-metric pass/warn/fail and a verdict with evidence
+  forcecoeffs.py       # force-coefficient parser: typed Cd/Cl/Cm series with
+                       # tail-window statistics; fills the ledger's Key result
   mcp/                 # FastMCP server exposing mechanics as tools (see src/mcp/README.md)
   translation/         # rules-based Foundation→ESI case translation
 database/

@@ -71,6 +71,7 @@ Switch the config files above to stdio (`"command": "foamagent-mcp"`) if you pre
 | `read_mesh_boundaries` | Patch names/types from `constant/polyMesh/boundary` |
 | `parse_solver_log` | Typed convergence facts from a solver log — residuals, Courant, continuity, completion — plus a verdict with evidence |
 | `assess_mesh` | Structured `checkMesh -allTopology -allGeometry`: mesh census, per-metric pass/warn/fail (topology vs geometry), verdict with evidence |
+| `parse_force_coefficients` | Typed Cd/Cl/Cm from a case's forceCoeffs output — first/final values, tail-window mean/min/max, reference values — and the ledger's Key result cell filled |
 | `translate_case_to_esi` | Rules-based Foundation→ESI translation |
 | `submit_slurm_job` / `slurm_job_status` | HPC job submission and polling |
 | `set_run_note` | Annotate/archive a run in `runs/ledger.md` — the only skill-side ledger write |

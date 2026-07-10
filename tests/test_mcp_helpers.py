@@ -178,12 +178,12 @@ def test_parse_solver_log_explicit_log_file_overrides():
 CHECKMESH_FIXTURES = REPO / "tests" / "fixtures" / "checkmesh"
 
 
-def test_assess_mesh_is_registered_as_tool_eighteen():
+def test_assess_mesh_is_registered():
     import asyncio
 
     names = {t.name for t in asyncio.run(fs.mcp.list_tools())}
     assert "assess_mesh" in names
-    assert len(names) == 18  # the mesh assessment joins the 17 existing tools
+    # The tool count is pinned by the newest tool's registration test below.
 
 
 def test_assess_mesh_returns_the_typed_assessment(tmp_path, monkeypatch):
@@ -223,3 +223,54 @@ def test_assess_mesh_surfaces_the_typed_error(tmp_path, monkeypatch):
     fn = getattr(fs.assess_mesh, "fn", fs.assess_mesh)
     with pytest.raises(meshcheck.MeshAssessmentError):
         asyncio.run(fn(case_dir=str(tmp_path)))
+
+
+# ---------------------------------------------------------------------------
+# parse_force_coefficients (#55): typed Cd/Cl/Cm, callable via MCP
+# ---------------------------------------------------------------------------
+
+FORCECOEFFS_DAT = (REPO / "tests" / "fixtures" / "forcecoeffs" / "cavity" /
+                   "postProcessing" / "forceCoeffs1" / "0" / "forceCoeffs.dat")
+
+
+def test_parse_force_coefficients_is_registered_as_tool_nineteen():
+    import asyncio
+
+    names = {t.name for t in asyncio.run(fs.mcp.list_tools())}
+    assert "parse_force_coefficients" in names
+    assert len(names) == 19  # the coefficient parser joins the 18 existing tools
+
+
+def test_parse_force_coefficients_returns_the_typed_analysis_and_stamps(
+        tmp_path, monkeypatch):
+    import asyncio
+
+    monkeypatch.setattr(fs.mechanics, "RUNS_DIR", tmp_path)
+    case_dir = fs.mechanics.resolve_case_dir("cavity")
+    time_dir = Path(case_dir) / "postProcessing" / "forceCoeffs1" / "0"
+    time_dir.mkdir(parents=True)
+    (time_dir / "forceCoeffs.dat").write_text(FORCECOEFFS_DAT.read_text())
+
+    fn = getattr(fs.parse_force_coefficients, "fn", fs.parse_force_coefficients)
+    resp = asyncio.run(fn(case_dir=case_dir, function_name=""))
+
+    assert resp.function_name == "forceCoeffs1"
+    assert resp.samples == 101                       # by eye from the fixture
+    assert resp.reference.mag_u_inf == pytest.approx(1.0)
+    assert resp.window.samples == 21
+    assert [c.name for c in resp.coefficients] == \
+        ["Cm", "Cd", "Cl", "Cl(f)", "Cl(r)"]
+    assert resp.key_result == "Cd=-2.501 Cl=0.1275 (tail mean)"
+    assert resp.stamped is True                      # the row's cell is filled
+    ledger_text = (tmp_path / "ledger.md").read_text(encoding="utf-8")
+    assert "Cd=-2.501 Cl=0.1275 (tail mean)" in ledger_text
+
+
+def test_parse_force_coefficients_surfaces_the_typed_error(tmp_path):
+    import asyncio
+
+    import forcecoeffs
+
+    with pytest.raises(forcecoeffs.ForceCoefficientsError, match="forces reference"):
+        fn = getattr(fs.parse_force_coefficients, "fn", fs.parse_force_coefficients)
+        asyncio.run(fn(case_dir=str(tmp_path), function_name=""))
