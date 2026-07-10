@@ -13,6 +13,11 @@ Work through the checks IN ORDER — each assumes the previous ones passed.
 (No Foam-Agent clone on this machine? Skip to
 [the global install path](#global-install-drive-foam-agent-from-your-own-project).)
 
+**When to run this — conditionally, not ritually:** on first setup of a
+fresh clone or machine, after an update, or when the foamagent tools stop
+responding mid-session. A healthy setup needs no per-session preflight —
+if the tools answer, skip straight to work.
+
 Shortcut: the doctor runs checks 2–5 below deterministically (read-only)
 and prints exact fix commands — run it first to see where things stand,
 then work the failing step here. In a clone that is

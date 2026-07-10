@@ -34,6 +34,23 @@ lid-driven cavity flow at Re=1000").
   plan in your final report instead.
 - Report progress after each phase.
 
+## Context loading — what to read when
+
+Load references on demand, not up front — only what the current situation
+calls for. This table is the index; the step-local pointers in the workflow
+below repeat the load-bearing ones where extra judgment guidance applies.
+
+| Situation | Read |
+|---|---|
+| Writing any case file | [references/file-generation.md](references/file-generation.md) + [references/openfoam-v10-conventions.md](references/openfoam-v10-conventions.md) |
+| Free-surface / VOF case (interFoam family) | [references/multiphase-vof.md](references/multiphase-vof.md) |
+| Writing the Allrun script | [references/allrun-guide.md](references/allrun-guide.md) |
+| Judging run outcomes (after `parse_solver_log`) | [references/convergence.md](references/convergence.md) |
+| Judging mesh quality (after `assess_mesh`) | [references/mesh-quality.md](references/mesh-quality.md) |
+| A run failed — diagnosing errors | [references/error-playbook.md](references/error-playbook.md) |
+| Cluster / SLURM execution | [references/hpc-slurm.md](references/hpc-slurm.md) |
+| Harness without native subagents | [references/subagents/](references/subagents/) — inline role fallbacks (foam-mesher, foam-debugger, foam-visualizer) |
+
 ## Workflow
 
 ### 0. Preflight
