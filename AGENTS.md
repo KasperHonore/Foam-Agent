@@ -65,6 +65,9 @@ src/
                        # per-metric pass/warn/fail and a verdict with evidence
   forcecoeffs.py       # force-coefficient parser: typed Cd/Cl/Cm series with
                        # tail-window statistics; fills the ledger's Key result
+  stlcheck.py          # structured surfaceCheck STL inspection: watertightness,
+                       # defective-edge counts, bounding box, units suspicion,
+                       # verdict with evidence
   mcp/                 # FastMCP server exposing mechanics as tools (see src/mcp/README.md)
   translation/         # rules-based Foundation→ESI case translation
 database/

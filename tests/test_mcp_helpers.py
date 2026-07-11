@@ -233,12 +233,12 @@ FORCECOEFFS_DAT = (REPO / "tests" / "fixtures" / "forcecoeffs" / "cavity" /
                    "postProcessing" / "forceCoeffs1" / "0" / "forceCoeffs.dat")
 
 
-def test_parse_force_coefficients_is_registered_as_tool_nineteen():
+def test_parse_force_coefficients_is_registered():
     import asyncio
 
     names = {t.name for t in asyncio.run(fs.mcp.list_tools())}
     assert "parse_force_coefficients" in names
-    assert len(names) == 19  # the coefficient parser joins the 18 existing tools
+    # The tool count is pinned by the newest tool's registration test below.
 
 
 def test_parse_force_coefficients_returns_the_typed_analysis_and_stamps(
@@ -274,3 +274,59 @@ def test_parse_force_coefficients_surfaces_the_typed_error(tmp_path):
     with pytest.raises(forcecoeffs.ForceCoefficientsError, match="forces reference"):
         fn = getattr(fs.parse_force_coefficients, "fn", fs.parse_force_coefficients)
         asyncio.run(fn(case_dir=str(tmp_path), function_name=""))
+
+
+# ---------------------------------------------------------------------------
+# inspect_stl (#60): structured surfaceCheck STL report, callable via MCP
+# ---------------------------------------------------------------------------
+
+SURFACECHECK_FIXTURES = REPO / "tests" / "fixtures" / "surfacecheck"
+
+
+def test_inspect_stl_is_registered_as_tool_twenty():
+    import asyncio
+
+    names = {t.name for t in asyncio.run(fs.mcp.list_tools())}
+    assert "inspect_stl" in names
+    assert len(names) == 20  # the STL inspector joins the 19 existing tools
+
+
+def test_inspect_stl_returns_the_typed_report(tmp_path, monkeypatch):
+    # Stubbed subprocess boundary (prior art: test_run_sourced.py): the tool
+    # sees the REAL harvested watertight surfaceCheck output, no OpenFOAM.
+    import asyncio
+
+    watertight = (SURFACECHECK_FIXTURES / "watertight" /
+                  "log.surfaceCheck").read_text()
+    monkeypatch.setattr(fs.mechanics, "_run_sourced",
+                        lambda command, cwd, timeout: (0, watertight, "", False))
+    stl = tmp_path / "watertight_cube.stl"
+    stl.write_text("solid cube\nendsolid cube\n")
+
+    fn = getattr(fs.inspect_stl, "fn", fs.inspect_stl)
+    resp = asyncio.run(fn(path=str(stl)))
+
+    assert resp.verdict == "ok"
+    assert resp.closed is True
+    assert resp.triangles == 12               # by eye from the fixture
+    assert resp.vertices == 8
+    assert resp.bounding_box.extents == pytest.approx([1.0, 1.0, 1.0])
+    assert resp.units_suspicious is False
+    assert resp.evidence
+
+
+def test_inspect_stl_surfaces_the_typed_error(tmp_path, monkeypatch):
+    # An output without surfaceCheck's status lines (crashed invocation) must
+    # surface as the typed SurfaceInspectionError, never a fabricated report.
+    import asyncio
+
+    import stlcheck
+
+    monkeypatch.setattr(fs.mechanics, "_run_sourced",
+                        lambda command, cwd, timeout: (1, "no surface here", "", False))
+    stl = tmp_path / "broken.stl"
+    stl.write_text("not an stl\n")
+
+    fn = getattr(fs.inspect_stl, "fn", fs.inspect_stl)
+    with pytest.raises(stlcheck.SurfaceInspectionError):
+        asyncio.run(fn(path=str(stl)))
