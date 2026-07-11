@@ -24,6 +24,7 @@ import shutil
 import signal
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -303,6 +304,106 @@ def run_openfoam_command(
     if timed_out:
         stderr = stderr + f"\nCommand timed out after {timeout}s"
     return returncode, stdout, stderr
+
+
+# ============================================================================
+# Geometry import (STL -> constant/triSurface), issue #61
+# ============================================================================
+
+class GeometryImportError(RuntimeError):
+    """The surface could not be imported (missing source, degenerate name,
+    or a failed surfaceTransformPoints run) — the case is left untouched."""
+
+
+@dataclass
+class GeometryImportResult:
+    """Typed outcome of one import_geometry call."""
+    dest_path: str            # relative to the case, posix-style
+    scale: Optional[float]    # None when the surface was copied unscaled
+    size_bytes: int           # byte size of the imported surface file
+    overwrote: bool           # a surface of this name already existed
+
+
+_UNSAFE_SURFACE_CHARS = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _normalize_surface_name(basename: str) -> str:
+    """Normalize a source basename into the triSurface file name.
+
+    Rule: a case-insensitive trailing '.stl' becomes lowercase '.stl' (appended
+    when absent); in the stem, every run of characters outside [A-Za-z0-9._-]
+    (whitespace included) becomes a single '_', and leading/trailing '_'/'.'
+    are stripped. 'My Part (v2).STL' -> 'My_Part_v2.stl'. A name with nothing
+    left after sanitizing raises :class:`GeometryImportError`.
+    """
+    stem = basename[:-4] if basename.lower().endswith(".stl") else basename
+    stem = _UNSAFE_SURFACE_CHARS.sub("_", stem).strip("_.")
+    if not stem:
+        raise GeometryImportError(
+            f"Source basename normalizes to an empty surface name: {basename!r}")
+    return stem + ".stl"
+
+
+def import_geometry(
+    case_dir: str,
+    src_path: str,
+    scale: Optional[float] = None,
+    timeout: int = 600,
+) -> GeometryImportResult:
+    """Import a server-visible STL into <case_dir>/constant/triSurface/.
+
+    The surface lands under its normalized source basename (see
+    :func:`_normalize_surface_name`); the triSurface directory is created when
+    absent. Without ``scale`` the file is copied byte-for-byte. With ``scale``
+    (e.g. 0.001 for mm->m) the copy is produced by Foundation v10's
+    surfaceTransformPoints using the harvest-verified transformations-string
+    form (#59) — ``surfaceTransformPoints "scale=(s s s)" src dst`` — so unit
+    correction is deterministic, never a hand-edited dict.
+
+    Both paths write to a temporary name inside triSurface and rename into
+    place, so a failure never leaves a partial surface behind: a missing
+    source or a failed surfaceTransformPoints run raises
+    :class:`GeometryImportError` with the case untouched. An existing surface
+    of the same name is replaced and reported via ``overwrote`` — never
+    silently.
+    """
+    if not os.path.isfile(src_path):
+        raise GeometryImportError(f"Source STL does not exist: {src_path}")
+    name = _normalize_surface_name(os.path.basename(src_path))
+
+    tri_dir = os.path.join(case_dir, "constant", "triSurface")
+    dest = os.path.join(tri_dir, name)
+    tmp_dest = os.path.join(tri_dir, f".{name}.import.stl")
+    overwrote = os.path.isfile(dest)
+    os.makedirs(tri_dir, exist_ok=True)
+
+    try:
+        if scale is None:
+            shutil.copyfile(src_path, tmp_dest)
+        else:
+            s = format(scale, "g")
+            command = (f'surfaceTransformPoints "scale=({s} {s} {s})" '
+                       f"'{os.path.abspath(src_path)}' '{tmp_dest}'")
+            returncode, stdout, stderr = run_openfoam_command(
+                case_dir, command, timeout)
+            if returncode != 0 or not os.path.isfile(tmp_dest):
+                tail = (stderr or stdout).strip()[-2000:]
+                raise GeometryImportError(
+                    f"surfaceTransformPoints failed (exit {returncode}) "
+                    f"scaling {src_path}: {tail}")
+        os.replace(tmp_dest, dest)
+    finally:
+        if os.path.isfile(tmp_dest):
+            os.remove(tmp_dest)
+
+    _log(f"Imported surface {src_path} -> {dest}"
+         + (f" (scale {scale})" if scale is not None else ""))
+    return GeometryImportResult(
+        dest_path=f"constant/triSurface/{name}",
+        scale=scale,
+        size_bytes=os.path.getsize(dest),
+        overwrote=overwrote,
+    )
 
 
 def check_foam_errors(directory: str) -> list:

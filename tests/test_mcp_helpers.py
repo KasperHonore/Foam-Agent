@@ -283,12 +283,12 @@ def test_parse_force_coefficients_surfaces_the_typed_error(tmp_path):
 SURFACECHECK_FIXTURES = REPO / "tests" / "fixtures" / "surfacecheck"
 
 
-def test_inspect_stl_is_registered_as_tool_twenty():
+def test_inspect_stl_is_registered():
     import asyncio
 
     names = {t.name for t in asyncio.run(fs.mcp.list_tools())}
     assert "inspect_stl" in names
-    assert len(names) == 20  # the STL inspector joins the 19 existing tools
+    # The tool count is pinned by the newest tool's registration test below.
 
 
 def test_inspect_stl_returns_the_typed_report(tmp_path, monkeypatch):
@@ -330,3 +330,43 @@ def test_inspect_stl_surfaces_the_typed_error(tmp_path, monkeypatch):
     fn = getattr(fs.inspect_stl, "fn", fs.inspect_stl)
     with pytest.raises(stlcheck.SurfaceInspectionError):
         asyncio.run(fn(path=str(stl)))
+
+
+# ---------------------------------------------------------------------------
+# import_geometry (#61): STL into constant/triSurface, callable via MCP
+# ---------------------------------------------------------------------------
+
+STL_FIXTURE = REPO / "tests" / "fixtures" / "stl" / "watertight_cube.stl"
+
+
+def test_import_geometry_is_registered_as_tool_twenty_one():
+    import asyncio
+
+    names = {t.name for t in asyncio.run(fs.mcp.list_tools())}
+    assert "import_geometry" in names
+    assert len(names) == 21  # the geometry importer joins the 20 existing tools
+
+
+def test_import_geometry_returns_the_typed_result(tmp_path):
+    import asyncio
+
+    fn = getattr(fs.import_geometry, "fn", fs.import_geometry)
+    resp = asyncio.run(fn(case_dir=str(tmp_path), src_path=str(STL_FIXTURE),
+                          scale=None, timeout=600))
+
+    assert resp.dest_path == "constant/triSurface/watertight_cube.stl"
+    assert resp.scale is None
+    assert resp.size_bytes == STL_FIXTURE.stat().st_size
+    assert resp.overwrote is False
+    assert (tmp_path / "constant" / "triSurface" / "watertight_cube.stl").is_file()
+
+
+def test_import_geometry_surfaces_the_typed_error(tmp_path):
+    import asyncio
+
+    import mechanics
+
+    fn = getattr(fs.import_geometry, "fn", fs.import_geometry)
+    with pytest.raises(mechanics.GeometryImportError, match="does not exist"):
+        asyncio.run(fn(case_dir=str(tmp_path), src_path=str(tmp_path / "ghost.stl"),
+                       scale=None, timeout=600))
