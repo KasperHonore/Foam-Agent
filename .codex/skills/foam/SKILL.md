@@ -49,6 +49,7 @@ below repeat the load-bearing ones where extra judgment guidance applies.
 | Writing the Allrun script | [references/allrun-guide.md](references/allrun-guide.md) |
 | Judging run outcomes (after `parse_solver_log`) | [references/convergence.md](references/convergence.md) |
 | Judging mesh quality (after `assess_mesh`) | [references/mesh-quality.md](references/mesh-quality.md) |
+| CAD geometry provided as an STL file (snappyHexMesh pathway) | [references/snappyhexmesh.md](references/snappyhexmesh.md) |
 | Force/coefficient questions (drag, lift, Cd/Cl/Cm) | [references/forces.md](references/forces.md) |
 | A run failed — diagnosing errors | [references/error-playbook.md](references/error-playbook.md) |
 | Cluster / SLURM execution | [references/hpc-slurm.md](references/hpc-slurm.md) |
@@ -88,9 +89,11 @@ never need restating.
    generate, as `folder/file` pairs (`system/controlDict`, `0/U`, ...). Rules:
    - Generate ALL files the solver needs (check the similar case's structure
      for completeness).
-   - No gmsh files (`.geo`, `.msh`) in the file list.
+   - No gmsh files (`.geo`, `.msh`) and no STL surfaces in the file list —
+     the foam-mesher subagent owns those.
    - Include `system/blockMeshDict` (or snappyHexMesh files) only when the user
-     did not request a gmsh-generated or custom uploaded mesh.
+     did not request a gmsh-generated, custom uploaded, or STL-based mesh
+     (for an STL case, foam-mesher generates the whole mesh dict set).
    - Forces or force coefficients in the requirement (drag, lift, Cd/Cl/Cm)?
      Plan a `forceCoeffs` function object into `system/controlDict` now — on
      Foundation v10 the reliable path is the object active during the solver
@@ -98,7 +101,7 @@ never need restating.
      Recipe and worked block: [references/forces.md](references/forces.md).
 5. Present the plan (case name, solver, file list, mesh strategy) and confirm.
 
-### 2. Set up the mesh (only if custom/GMSH mesh)
+### 2. Set up the mesh (only if custom/GMSH/STL mesh)
 
 - **User-provided `.msh` file**: write it into the case with `write_case_file`,
   ensure a minimal `system/controlDict` exists, run
@@ -110,6 +113,22 @@ never need restating.
   subagent. If your harness has no subagents, read
   [references/subagents/foam-mesher.md](references/subagents/foam-mesher.md)
   and follow it inline.
+- **User-provided STL (CAD geometry)**: first get the file where the server
+  can see it — copy it with your LOCAL file tools into the case directory
+  under the runs tree (clone install: `<repo>/runs/<case>/`; global install:
+  the central `~/foamagent/runs/<case>/` mount), creating the directory if
+  needed. The runs directory is a bind mount into the server's container;
+  there is deliberately NO server-side upload tool. Then call
+  `resolve_case_dir(case_name)` (if you haven't yet) and delegate to the
+  **foam-mesher** subagent with the case_dir and the STL's path — it runs
+  the snappy pathway: `inspect_stl` (typed watertightness/units verdict) →
+  `import_geometry` (into `constant/triSurface/`, deterministic mm→m scaling
+  when needed) → mesh dicts per
+  [references/snappyhexmesh.md](references/snappyhexmesh.md) → the v10
+  meshing sequence → `read_mesh_boundaries` → `assess_mesh`. Dicts come out
+  in Foundation v10 vocabulary (`surfaceFeatures`, not
+  `surfaceFeatureExtract`); for ESI users nothing changes — detect, name it,
+  and offer `translate_case_to_esi` at the end as usual (best-effort).
 - **blockMesh**: nothing to do here — `blockMeshDict` is generated in step 3
   and blockMesh runs inside Allrun.
 - **Validate the mesh** (any source): `assess_mesh(case_dir)` — typed census,
