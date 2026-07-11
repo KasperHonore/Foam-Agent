@@ -4,7 +4,7 @@
 case and returns typed mesh-quality facts — numbers computed from the
 output, never guessed, at the same cost for a 400-cell toy and a
 million-cell mesh. It reads the mesh as checkMesh sees it, so it works
-unchanged on blockMesh, GMSH-imported and (coming) snappyHexMesh meshes.
+unchanged on blockMesh, GMSH-imported and snappyHexMesh meshes.
 A case with no mesh, or a checkMesh crash, raises a typed error — never a
 fabricated assessment.
 
@@ -90,10 +90,11 @@ error into wisps and parasitic currents.
 ## Which knob to turn
 
 Geometry failures and warn-band values map to mesh-generation parameters.
-snappyHexMesh is the coming pathway — no snappy tooling ships yet; the
-column is for when a snappy-built mesh reaches you anyway.
+For snappy-built meshes, [references/snappyhexmesh.md](snappyhexmesh.md)
+carries the full downgrade ladder and the concave-cells reading rule; the
+column here is the knob summary.
 
-| Failing metric | blockMesh | GMSH | snappyHexMesh (coming pathway) |
+| Failing metric | blockMesh | GMSH | snappyHexMesh |
 |---|---|---|---|
 | `max_non_orthogonality` | milder `simpleGrading` ratios (expansion <= ~3 per block); move block vertices so edges meet near 90 degrees; split strongly sheared blocks | cleaner geometry; structured/transfinite meshing where possible; refine near curvature (Distance + Threshold size fields); try another 2D/3D `Mesh.Algorithm` | more castellated refinement before snap; gentler snapControls (`nSmoothPatch`, `nRelaxIter`, `tolerance`) |
 | `max_skewness` | reposition vertices to unshear blocks; milder grading; more cells across curved blocks | smaller characteristic length in the flagged region (the same Distance + Threshold fields used for local refinement); enable mesh optimization | snapControls smoothing; raise the castellation level at the offending surface |

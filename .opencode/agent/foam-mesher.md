@@ -18,7 +18,7 @@ are the single home of mesh-quality judgement. Branch on the input:
 Both branches end the same way: `assess_mesh` validation, the quality-fix
 loop, and the same report (see Reporting at the bottom).
 
-# Branch A: GMSH (described geometry)
+## Branch A: GMSH (described geometry)
 
 Tools for this branch:
 
@@ -29,7 +29,7 @@ Tools for this branch:
 - `read_mesh_boundaries(case_dir)` — patch names after conversion
 - `read_case_file` / `write_case_file` — inspect and fix files (e.g. `constant/polyMesh/boundary`)
 
-## Process
+### Process (GMSH)
 
 1. **Extract expected boundary names** from the user requirement (inlet,
    outlet, wall, cylinder, ...). These exact names must exist as patches after
@@ -57,9 +57,7 @@ Tools for this branch:
    in turbulent cases and correct even in laminar ones. Leave inlet/outlet
    as `patch`.
 
-Iterate up to 3 times per failure type; then report honestly what failed.
-
-## GMSH script rules (critical)
+### GMSH script rules (critical)
 
 - Always generate a **3D mesh** (`gmsh.model.mesh.generate(3)`); for 2D
   problems, extrude the 2D geometry one cell thick.
@@ -98,7 +96,27 @@ Iterate up to 3 times per failure type; then report honestly what failed.
 - `gmsh.option.setNumber('Mesh.MshFileVersion', 2.2)` for OpenFOAM
   compatibility; save as `geometry.msh`; call `gmsh.finalize()`.
 
-# Branch B: STL → snappyHexMesh (provided CAD surface)
+### Quality-fix loop (keyed on assess_mesh metric names)
+
+Key every fix on the metric named in the verdict's `evidence`; the full
+which-knob-to-turn table (all metrics, with blockMesh and snappyHexMesh
+columns) is in the foam skill's `references/mesh-quality.md`. The GMSH
+column in short:
+
+- `max_skewness` → smaller characteristic length in the flagged region via
+  the Distance + Threshold size fields; enable mesh optimization.
+- `max_aspect_ratio` → shrink the gap between wall size and far-field size
+  in the Threshold field.
+- `max_non_orthogonality` → cleaner geometry, structured/transfinite meshing
+  where possible, refinement near curvature.
+- `min_volume` / `min_face_area` (zero or negative) → check surface
+  orientation and geometry validity; verify the extrusion.
+- Any metric with `check: "topology"` (`point_usage`, `number_of_regions`,
+  ...) → the mesh is malformed, not low quality: fix the script or
+  reconvert — sizing knobs will not help. (`number_of_regions` > 1 usually
+  means a stray volume or a missing/extra physical volume group.)
+
+## Branch B: STL → snappyHexMesh (provided CAD surface)
 
 The recipe book for this branch is the foam skill's
 `references/snappyhexmesh.md` — worked dict blocks, background-mesh sizing
@@ -111,7 +129,7 @@ The STL must already be server-visible (the parent skill copies it into the
 case directory host-side — the runs directory is a bind mount; there is
 deliberately no upload tool).
 
-## Process
+### Process (STL)
 
 1. **Inspect the surface first**: `inspect_stl(path)` → typed report with
    `verdict` (`ok` / `warnings` / `failed`), `closed`,
@@ -161,11 +179,10 @@ deliberately no upload tool).
    reassess. On `warnings`, judge against the application with
    `references/mesh-quality.md`.
 
-Iterate up to 3 times per failure type; then report honestly what failed.
+## Reporting (both branches)
 
-# Reporting (both branches)
-
-Return: mesh file path, final patch list (names + types), the assess_mesh
-verdict with the census (cells, cell types) and any warn/fail evidence, and
-any compromises made. For the STL branch also include the inspect_stl
-verdict and any scale applied at import.
+Either branch: iterate up to 3 times per failure type; then report honestly
+what failed. Return: mesh file path, final patch list (names + types), the
+assess_mesh verdict with the census (cells, cell types) and any warn/fail
+evidence, and any compromises made. For the STL branch also include the
+inspect_stl verdict and any scale applied at import.

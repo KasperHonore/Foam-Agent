@@ -28,7 +28,9 @@ lid-driven cavity flow at Re=1000").
   v10 first and call `translate_case_to_esi` at the end (best-effort).
 - **Create and edit ALL case files with the `write_case_file` MCP tool**, never
   your local file tools — the server may run in a container whose filesystem is
-  where the simulation executes. Same for reading: use `read_case_file`.
+  where the simulation executes. Same for reading: use `read_case_file`. (One
+  sanctioned exception: copying a user's input STL into the runs tree so the
+  server can see it at all — step 2's STL bullet.)
 - Never modify parameters the user explicitly specified (Reynolds number,
   velocities, geometry, solver choice...). Fix errors by other means.
 - Show the user your plan and get confirmation before generating files. When
@@ -113,13 +115,13 @@ never need restating.
   subagent. If your harness has no subagents, read
   [references/subagents/foam-mesher.md](references/subagents/foam-mesher.md)
   and follow it inline.
-- **User-provided STL (CAD geometry)**: first get the file where the server
-  can see it — copy it with your LOCAL file tools into the case directory
-  under the runs tree (clone install: `<repo>/runs/<case>/`; global install:
-  the central `~/foamagent/runs/<case>/` mount), creating the directory if
-  needed. The runs directory is a bind mount into the server's container;
-  there is deliberately NO server-side upload tool. Then call
-  `resolve_case_dir(case_name)` (if you haven't yet) and delegate to the
+- **User-provided STL (CAD geometry)**: first call `resolve_case_dir(case_name)`
+  to fix the case directory, then get the file where the server can see it —
+  copy it with your LOCAL file tools into that case directory under the runs
+  tree (clone install: `<repo>/runs/<case>/`; global install: the central
+  `~/foamagent/runs/<case>/` mount), creating the directory if needed. The
+  runs directory is a bind mount into the server's container; there is
+  deliberately NO server-side upload tool. Then delegate to the
   **foam-mesher** subagent with the case_dir and the STL's path — it runs
   the snappy pathway: `inspect_stl` (typed watertightness/units verdict) →
   `import_geometry` (into `constant/triSurface/`, deterministic mm→m scaling
