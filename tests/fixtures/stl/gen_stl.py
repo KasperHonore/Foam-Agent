@@ -70,12 +70,13 @@ def write_stl(path, name, facets):
     print(f"wrote {path} ({len(facets)} facets)")
 
 
-write_stl("watertight_cube.stl", "cube",
-          cube_facets((0.0, 0.0, 0.0), 1.0))
-write_stl("open_box.stl", "openBox",
-          cube_facets((0.0, 0.0, 0.0), 1.0, skip_plus_z=True))
-write_stl("two_shells.stl", "twoShells",
-          cube_facets((0.0, 0.0, 0.0), 1.0)
-          + cube_facets((3.0, 0.0, 0.0), 1.0))
-write_stl("cube_mm.stl", "cubeMm",
-          cube_facets((0.0, 0.0, 0.0), 1000.0))
+if __name__ == "__main__":
+    write_stl("watertight_cube.stl", "cube",
+              cube_facets((0.0, 0.0, 0.0), 1.0))
+    write_stl("open_box.stl", "openBox",
+              cube_facets((0.0, 0.0, 0.0), 1.0, skip_plus_z=True))
+    write_stl("two_shells.stl", "twoShells",
+              cube_facets((0.0, 0.0, 0.0), 1.0)
+              + cube_facets((3.0, 0.0, 0.0), 1.0))
+    write_stl("cube_mm.stl", "cubeMm",
+              cube_facets((0.0, 0.0, 0.0), 1000.0))
