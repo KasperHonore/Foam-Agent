@@ -28,6 +28,7 @@ import convergence
 import forcecoeffs
 import mechanics
 import meshcheck
+import stlcheck
 from translation.esi_translator import ESITranslator
 
 
@@ -63,6 +64,12 @@ the numbers are computed, never guessed, and cost the same on any log size.
 After meshing, assess_mesh runs `checkMesh -allTopology -allGeometry` and
 returns the mesh census plus per-metric pass/warn/fail classifications and
 a verdict with evidence — prefer it over eyeballing raw checkMesh text.
+
+Before meshing against an STL surface, inspect_stl runs surfaceCheck on it
+and returns a typed report — watertightness with defective-edge counts,
+triangle/vertex counts, bounding box, parts/zones, a units-suspicion flag —
+plus a verdict with evidence. surfaceCheck exits 0 even for defective
+surfaces, so never judge an STL by exit code; use this tool.
 
 When a case has forceCoeffs output, parse_force_coefficients returns the
 typed coefficient summary (Cd/Cl/Cm with first/final values and tail-window
@@ -617,6 +624,61 @@ async def parse_force_coefficients(
         forcecoeffs.parse_force_coefficients, case_dir, function_name or None
     )
     return ForceCoefficientsResponse(**dataclasses.asdict(analysis))
+
+
+# ============================================================================
+# Structured STL surface inspection (deterministic, key-free)
+# ============================================================================
+
+class BoundingBoxModel(BaseModel):
+    min: List[float] = Field(description="Bounding-box minimum corner (x y z)")
+    max: List[float] = Field(description="Bounding-box maximum corner (x y z)")
+    extents: List[float] = Field(description="Per-axis extents (max - min)")
+
+
+class SurfaceReportResponse(BaseModel):
+    surface_file: str = Field(description="Surface file surfaceCheck ran on, read from the run's own Exec line")
+    triangles: int = Field(description="Triangle count from the Statistics block")
+    vertices: Optional[int] = Field(description="Vertex count (None when absent)")
+    bounding_box: Optional[BoundingBoxModel] = Field(description="Axis-aligned bounding box with per-axis extents (None when absent)")
+    closed: bool = Field(description="True iff surfaceCheck reported the surface closed (watertight: all edges connected to two faces)")
+    edges_connected_to_one_face: Optional[int] = Field(description="Edges connected to only one face — holes / open boundaries (0 for a closed surface)")
+    edges_connected_to_more_than_two_faces: Optional[int] = Field(description="Edges connected to more than two faces — non-manifold (0 for a closed surface)")
+    unconnected_parts: Optional[int] = Field(description="Number of unconnected parts (>1 means multiple shells in one file)")
+    zones: Optional[int] = Field(description="Number of zones (connected areas with consistent normal orientation)")
+    units_suspicious: bool = Field(description="True when the largest bounding-box extent is at/above 1000 — plausibly a millimetre export of a metre-scale part (warns, never fails)")
+    verdict: str = Field(description="'ok', 'warnings' or 'failed' — computed from the surfaceCheck TEXT (its exit code is 0 even for defective surfaces)")
+    evidence: List[str] = Field(description="Human-readable strings naming each problem (or what makes the surface ok)")
+
+
+@mcp.tool(name="inspect_stl")
+async def inspect_stl(
+    path: str = Field(description="Path to the STL surface — absolute (on the server's filesystem) or relative to the server's working directory (e.g. 'runs/<case>/constant/triSurface/part.stl')"),
+    timeout: int = Field(default=600, description="Max surfaceCheck execution time in seconds"),
+    ctx: Context = None,
+) -> SurfaceReportResponse:
+    """Run `surfaceCheck` on an STL surface and return a typed geometry report.
+
+    Deterministic and key-free on the parsing side: watertightness with the
+    defective-edge counts (connected to one face = holes, to >2 faces =
+    non-manifold), triangle/vertex counts, the bounding box with per-axis
+    extents, unconnected-parts and normal-orientation-zone counts, a
+    units-suspicion flag, and a verdict (ok / warnings / failed) with
+    evidence naming each problem. surfaceCheck exits 0 even for defective
+    surfaces, so every verdict comes from the output text. An open surface
+    is failed (snappyHexMesh needs a watertight surface); multiple shells,
+    normals flipping within a part, or a suspected millimetre export
+    (largest extent at/above 1000 — STL carries no unit metadata) warn
+    without failing. surfaceCheck runs in the STL's own directory, so its
+    diagnostic dump files on defective surfaces (problemFaces, zoning .vtk,
+    per-part .obj) land next to the inspected surface. A missing file or an
+    unreadable surface raises a typed error, never a fabricated report.
+    """
+    # Same path convention as _abs_case_dir: relative paths resolve against
+    # the server's working directory, absolute in-container paths pass through.
+    path = os.path.abspath(path)
+    report = await asyncio.to_thread(stlcheck.inspect_stl, path, timeout)
+    return SurfaceReportResponse(**dataclasses.asdict(report))
 
 
 # ============================================================================
