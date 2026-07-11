@@ -682,6 +682,43 @@ async def inspect_stl(
 
 
 # ============================================================================
+# Geometry import: STL into constant/triSurface, deterministic scaling
+# ============================================================================
+
+class GeometryImportResponse(BaseModel):
+    dest_path: str = Field(description="Imported surface path relative to the case (posix-style), e.g. 'constant/triSurface/cube.stl' — reference this name in snappyHexMeshDict/surfaceFeaturesDict")
+    scale: Optional[float] = Field(description="Uniform scale factor applied via surfaceTransformPoints (null when the surface was copied unscaled)")
+    size_bytes: int = Field(description="Byte size of the imported surface file")
+    overwrote: bool = Field(description="True when a surface of the same normalized name already existed and was replaced")
+
+
+@mcp.tool(name="import_geometry")
+async def import_geometry(
+    case_dir: str = Field(description="Case directory to import the surface into"),
+    src_path: str = Field(description="Server-visible path of the source STL (e.g. inside the runs bind mount — copy the user's file there host-side first)"),
+    scale: Optional[float] = Field(default=None, description="Optional uniform scale factor, e.g. 0.001 for mm->m; applied deterministically with Foundation v10 surfaceTransformPoints"),
+    timeout: int = Field(default=600, description="Max scaling time in seconds (ignored for plain copies)"),
+    ctx: Context = None,
+) -> GeometryImportResponse:
+    """Import an STL surface into the case's constant/triSurface/ directory.
+
+    Copies the surface under a normalized name (whitespace and unsafe
+    characters become underscores; lowercase '.stl' extension), creating
+    constant/triSurface/ when absent. With ``scale`` the copy is produced by
+    surfaceTransformPoints ("scale=(s s s)" form) so mm->m unit correction is
+    computed, never a hand-edited dict. The typed result names the
+    case-relative destination, the applied scale, the imported byte size and
+    whether an existing surface was overwritten (never silent). A missing
+    source raises a typed error with the case left untouched.
+    """
+    case_dir = _require_case_dir(case_dir)
+    result = await asyncio.to_thread(
+        mechanics.import_geometry, case_dir, src_path, scale, timeout
+    )
+    return GeometryImportResponse(**dataclasses.asdict(result))
+
+
+# ============================================================================
 # ESI translation (mechanical, rules-based)
 # ============================================================================
 

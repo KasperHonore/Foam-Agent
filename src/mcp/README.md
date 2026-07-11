@@ -73,6 +73,7 @@ Switch the config files above to stdio (`"command": "foamagent-mcp"`) if you pre
 | `assess_mesh` | Structured `checkMesh -allTopology -allGeometry`: mesh census, per-metric pass/warn/fail (topology vs geometry), verdict with evidence |
 | `parse_force_coefficients` | Typed Cd/Cl/Cm from a case's forceCoeffs output — first/final values, tail-window mean/min/max, reference values — and the ledger's Key result cell filled |
 | `inspect_stl` | Structured `surfaceCheck` on an STL surface: watertightness with defective-edge counts, triangles/vertices, bounding box, parts/zones, units suspicion, verdict with evidence (surfaceCheck's exit code is 0 even for defective surfaces — the text is the truth) |
+| `import_geometry` | STL into the case's `constant/triSurface/` under a normalized name; optional deterministic mm→m scaling via `surfaceTransformPoints`; typed result with case-relative destination, applied scale, byte size and an explicit overwrote flag |
 | `translate_case_to_esi` | Rules-based Foundation→ESI translation |
 | `submit_slurm_job` / `slurm_job_status` | HPC job submission and polling |
 | `set_run_note` | Annotate/archive a run in `runs/ledger.md` — the only skill-side ledger write |

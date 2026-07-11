@@ -35,7 +35,7 @@ Your agent harness            Claude Code / Cursor / Codex / OpenCode
  does the CFD reasoning)
         │  MCP (HTTP)
         ▼
-foamagent-mcp in Docker       20 mechanical tools, ZERO API keys:
+foamagent-mcp in Docker       21 mechanical tools, ZERO API keys:
 (the HANDS)                   RAG over v10 tutorials (local embeddings),
                               case file I/O, OpenFOAM execution, error
                               extraction, GMSH/PyVista scripts, SLURM

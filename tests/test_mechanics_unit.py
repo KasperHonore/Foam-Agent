@@ -246,6 +246,126 @@ def test_run_python_script_failure(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Geometry import (#61): STL into constant/triSurface, optional scaling
+# ---------------------------------------------------------------------------
+
+STL_FIXTURES = REPO / "tests" / "fixtures" / "stl"
+
+
+def _fake_surface_transform(calls, write_dest=True, returncode=0):
+    """Stub for mechanics.run_openfoam_command: records the invocation and
+    (like the real surfaceTransformPoints) writes the destination file."""
+    import shlex
+
+    def fake(case_dir, command, timeout=600):
+        calls.append((case_dir, command, timeout))
+        if write_dest:
+            dest = shlex.split(command)[-1]
+            Path(dest).write_bytes(b"scaled surface bytes")
+        return returncode, "surfaceTransformPoints stdout", "" if returncode == 0 else "boom"
+
+    return fake
+
+
+def test_import_geometry_copies_into_trisurface(tmp_path):
+    case = tmp_path / "case"
+    case.mkdir()
+    src = STL_FIXTURES / "watertight_cube.stl"
+
+    result = mechanics.import_geometry(str(case), str(src))
+
+    assert result.dest_path == "constant/triSurface/watertight_cube.stl"
+    assert result.scale is None
+    assert result.overwrote is False
+    dest = case / "constant" / "triSurface" / "watertight_cube.stl"
+    assert dest.read_bytes() == src.read_bytes()
+    assert result.size_bytes == src.stat().st_size
+
+
+def test_import_geometry_normalizes_the_name(tmp_path):
+    case = tmp_path / "case"
+    case.mkdir()
+    src = tmp_path / "My Part (v2).STL"
+    src.write_bytes((STL_FIXTURES / "watertight_cube.stl").read_bytes())
+
+    result = mechanics.import_geometry(str(case), str(src))
+
+    assert result.dest_path == "constant/triSurface/My_Part_v2.stl"
+    assert (case / "constant" / "triSurface" / "My_Part_v2.stl").is_file()
+
+
+def test_import_geometry_reports_overwrite(tmp_path):
+    case = tmp_path / "case"
+    case.mkdir()
+    src = STL_FIXTURES / "watertight_cube.stl"
+
+    first = mechanics.import_geometry(str(case), str(src))
+    second = mechanics.import_geometry(str(case), str(src))
+
+    assert first.overwrote is False
+    assert second.overwrote is True
+    assert second.dest_path == first.dest_path
+
+
+def test_import_geometry_missing_source_leaves_case_untouched(tmp_path):
+    case = tmp_path / "case"
+    case.mkdir()
+
+    with pytest.raises(mechanics.GeometryImportError, match="does not exist"):
+        mechanics.import_geometry(str(case), str(tmp_path / "missing.stl"))
+
+    assert list(case.iterdir()) == []  # no constant/, no droppings
+
+
+def test_import_geometry_scale_runs_the_verified_invocation(tmp_path, monkeypatch):
+    # Harvest-verified v10 form (#59): a transformations STRING, not flags.
+    import shlex
+
+    case = tmp_path / "case"
+    case.mkdir()
+    src = STL_FIXTURES / "cube_mm.stl"
+    calls = []
+    monkeypatch.setattr(mechanics, "run_openfoam_command",
+                        _fake_surface_transform(calls))
+
+    result = mechanics.import_geometry(str(case), str(src), scale=0.001)
+
+    assert len(calls) == 1
+    case_dir, command, _timeout = calls[0]
+    assert case_dir == str(case)
+    assert command.startswith('surfaceTransformPoints "scale=(0.001 0.001 0.001)" ')
+    tokens = shlex.split(command)
+    assert tokens[1] == "scale=(0.001 0.001 0.001)"
+    assert tokens[2] == str(src)
+    # The utility writes inside triSurface to an .stl name (format inference).
+    assert Path(tokens[3]).parent == case / "constant" / "triSurface"
+    assert tokens[3].endswith(".stl")
+
+    assert result.scale == 0.001
+    assert result.dest_path == "constant/triSurface/cube_mm.stl"
+    dest = case / "constant" / "triSurface" / "cube_mm.stl"
+    assert dest.read_bytes() == b"scaled surface bytes"
+    assert result.size_bytes == len(b"scaled surface bytes")
+
+
+def test_import_geometry_scale_failure_preserves_existing_surface(tmp_path, monkeypatch):
+    case = tmp_path / "case"
+    tri = case / "constant" / "triSurface"
+    tri.mkdir(parents=True)
+    (tri / "cube_mm.stl").write_bytes(b"the original surface")
+    src = STL_FIXTURES / "cube_mm.stl"
+    calls = []
+    monkeypatch.setattr(mechanics, "run_openfoam_command",
+                        _fake_surface_transform(calls, write_dest=False, returncode=1))
+
+    with pytest.raises(mechanics.GeometryImportError, match="surfaceTransformPoints"):
+        mechanics.import_geometry(str(case), str(src), scale=0.001)
+
+    assert (tri / "cube_mm.stl").read_bytes() == b"the original surface"
+    assert [p.name for p in tri.iterdir()] == ["cube_mm.stl"]  # no temp droppings
+
+
+# ---------------------------------------------------------------------------
 # Agent asset sync
 # ---------------------------------------------------------------------------
 
