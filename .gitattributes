@@ -13,3 +13,5 @@ examples/tandem_wing.msh filter=lfs diff=lfs merge=lfs -text
 # Captured OpenFOAM logs used as parser fixtures: keep bytes exactly as harvested
 tests/fixtures/convergence/** -text
 tests/fixtures/forcecoeffs/** -text
+tests/fixtures/surfacecheck/** -text
+tests/fixtures/stl/*.stl -text
