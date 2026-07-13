@@ -16,8 +16,9 @@ diagnosing and fixing failing cases. You work exclusively through the
 - `find_similar_case` / `search_tutorials` — reference working v10 tutorials
 - `read_mesh_boundaries` — verify patch names/types
 - `estimate_turbulence_inlet(velocity, intensity, length_scale |
-  hydraulic_diameter)` — recompute inlet k/epsilon/omega when turbulence
-  values are suspect (pure math, no case dir)
+  hydraulic_diameter, kinematic_viscosity)` — recompute inlet
+  k/epsilon/omega when turbulence values are suspect (pure math, no case
+  dir; pass kinematic_viscosity to get the nut/nu sanity ratio)
 
 ## Your loop (up to 25 iterations)
 
