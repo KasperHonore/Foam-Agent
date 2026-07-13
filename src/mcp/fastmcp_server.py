@@ -29,6 +29,7 @@ import forcecoeffs
 import mechanics
 import meshcheck
 import stlcheck
+import wallspacing
 from translation.esi_translator import ESITranslator
 
 
@@ -76,6 +77,14 @@ typed coefficient summary (Cd/Cl/Cm with first/final values and tail-window
 statistics, plus the reference values used for normalization) and stamps a
 compact summary into the run ledger's Key result cell — prefer it over
 reading dat files and averaging by eye.
+
+Before sizing a boundary-layer mesh for a turbulent case, estimate_wall_spacing
+turns the flow conditions and a target y+ into computed numbers — Reynolds
+number with a regime verdict, the named skin-friction correlation, friction
+velocity, the first-cell CENTRE distance and the first-cell HEIGHT as two
+separately labelled fields, a boundary-layer thickness estimate and a
+suggested layer count. Pure math, no case directory: never do this
+arithmetic from memory.
 
 The run ledger (runs/ledger.md) tracks every run automatically as a side
 effect of the tools above. set_run_note is the ONLY sanctioned skill-side
@@ -716,6 +725,79 @@ async def import_geometry(
         mechanics.import_geometry, case_dir, src_path, scale, timeout
     )
     return GeometryImportResponse(**dataclasses.asdict(result))
+
+
+# ============================================================================
+# Wall-spacing calculator (pure math, deterministic, key-free)
+# ============================================================================
+
+class QuantityModel(BaseModel):
+    value: float = Field(description="Computed value (SI units; the field description names them)")
+    formula: str = Field(description="The named correlation/formula that produced the value")
+
+
+class LayerCountModel(BaseModel):
+    value: int = Field(description="Suggested number of boundary layers")
+    formula: str = Field(description="The covering rule that chose the count")
+
+
+class WallSpacingResponse(BaseModel):
+    flow_type: str = Field(description="'external' (flat-plate correlations) or 'internal' (pipe correlations) — echoed input")
+    velocity: float = Field(description="Freestream/bulk velocity U [m/s] — echoed input")
+    characteristic_length: float = Field(description="Characteristic length [m] — echoed input (plate/body length for external, hydraulic diameter for internal)")
+    kinematic_viscosity: float = Field(description="Kinematic viscosity nu [m^2/s] — echoed input")
+    target_y_plus: float = Field(description="Target y+ for the first cell CENTRE — echoed input")
+    expansion_ratio: float = Field(description="Layer expansion ratio used for the layer-count suggestion — echoed input (default 1.2)")
+    reynolds_number: QuantityModel = Field(description="Reynolds number on the characteristic length (Re_x external, Re_D internal)")
+    regime: str = Field(description="'laminar', 'transitional' or 'turbulent' — laminar means wall functions and turbulence models are inapplicable (the numbers still come back, from the laminar correlation)")
+    skin_friction_coefficient: QuantityModel = Field(description="Skin-friction coefficient Cf, Fanning convention (tau_w = Cf/2*rho*U^2); the formula names the pinned correlation")
+    kinematic_wall_shear_stress: QuantityModel = Field(description="KINEMATIC wall shear stress tau_w/rho [m^2/s^2] — the tool takes nu only, density cancels in the spacing chain")
+    friction_velocity: QuantityModel = Field(description="Friction velocity u_tau [m/s]")
+    first_cell_centre_distance: QuantityModel = Field(description="Distance of the first cell CENTRE from the wall, y1 = y+*nu/u_tau [m] — where y+ is evaluated")
+    first_cell_height: QuantityModel = Field(description="First-cell HEIGHT, 2*y1 [m] — the layer thickness a mesher needs; NOT the centre distance")
+    boundary_layer_thickness: QuantityModel = Field(description="Boundary-layer thickness estimate delta [m] the layer stack should cover")
+    suggested_layer_count: LayerCountModel = Field(description="Smallest layer count whose geometric stack (first layer = first-cell height, growth = expansion_ratio) covers delta")
+    evidence: List[str] = Field(description="Human-readable strings naming the regime thresholds, correlation choices and any extrapolation beyond a correlation's stated validity")
+
+
+@mcp.tool(name="estimate_wall_spacing")
+async def estimate_wall_spacing(
+    velocity: float = Field(description="Freestream/bulk velocity U in m/s (positive)"),
+    characteristic_length: float = Field(description="Characteristic length in m (positive): plate/body length for external flow, hydraulic diameter for internal flow"),
+    kinematic_viscosity: float = Field(description="Kinematic viscosity nu in m^2/s (positive), e.g. 1.5e-5 for air, 1e-6 for water"),
+    target_y_plus: float = Field(description="Target y+ for the first cell CENTRE (positive): ~1 for low-Re wall treatment, 30-300 for wall functions"),
+    flow_type: str = Field(default="external", description="'external' (flat-plate correlation family, default) or 'internal' (pipe family)"),
+    expansion_ratio: float = Field(default=wallspacing.DEFAULT_EXPANSION_RATIO, description="Layer expansion ratio for the layer-count suggestion (>= 1; default 1.2, the snappy reference's conservative default)"),
+    ctx: Context = None,
+) -> WallSpacingResponse:
+    """Compute the wall-normal mesh spacing for a target y+ from flow
+    conditions. Pure math — no case directory, no filesystem.
+
+    Deterministic and key-free: Reynolds number with a regime verdict
+    (laminar / transitional / turbulent, thresholds named in the evidence),
+    the skin-friction coefficient from the pinned correlation for the flow
+    type (Schlichting/Blasius flat plate external, Blasius/Hagen-Poiseuille
+    pipe internal — every numeric field carries the name of the correlation
+    or formula that produced it), kinematic wall shear stress, friction
+    velocity, the first-cell CENTRE distance (where y+ is evaluated) and the
+    first-cell HEIGHT (what a mesher needs) as two separately labelled
+    fields, a boundary-layer thickness estimate, and the smallest layer
+    count covering it at the given expansion ratio. A laminar-regime result
+    still returns every number; the verdict tells you wall functions and
+    turbulence models are inapplicable. Non-physical inputs (non-positive
+    velocity, length, viscosity or y+ target) raise a typed error — never
+    plausible garbage numbers. Numbers are computed, never recalled: do not
+    do this arithmetic from memory.
+    """
+    estimate = wallspacing.estimate_wall_spacing(
+        velocity=velocity,
+        characteristic_length=characteristic_length,
+        kinematic_viscosity=kinematic_viscosity,
+        target_y_plus=target_y_plus,
+        flow_type=flow_type,
+        expansion_ratio=expansion_ratio,
+    )
+    return WallSpacingResponse(**dataclasses.asdict(estimate))
 
 
 # ============================================================================

@@ -74,6 +74,7 @@ Switch the config files above to stdio (`"command": "foamagent-mcp"`) if you pre
 | `parse_force_coefficients` | Typed Cd/Cl/Cm from a case's forceCoeffs output — first/final values, tail-window mean/min/max, reference values — and the ledger's Key result cell filled |
 | `inspect_stl` | Structured `surfaceCheck` on an STL surface: watertightness with defective-edge counts, triangles/vertices, bounding box, parts/zones, units suspicion, verdict with evidence (surfaceCheck's exit code is 0 even for defective surfaces — the text is the truth) |
 | `import_geometry` | STL into the case's `constant/triSurface/` under a normalized name; optional deterministic mm→m scaling via `surfaceTransformPoints`; typed result with case-relative destination, applied scale, byte size and an explicit overwrote flag |
+| `estimate_wall_spacing` | Pure-math wall-spacing calculator: flow conditions + target y⁺ → Reynolds number with regime verdict, named skin-friction correlation (flat-plate family external, pipe family internal), friction velocity, first-cell **centre** distance and first-cell **height** as two separately labelled fields, boundary-layer thickness estimate, suggested layer count — every number carries the formula that produced it |
 | `translate_case_to_esi` | Rules-based Foundation→ESI translation |
 | `submit_slurm_job` / `slurm_job_status` | HPC job submission and polling |
 | `set_run_note` | Annotate/archive a run in `runs/ledger.md` — the only skill-side ledger write |
