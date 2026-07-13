@@ -766,7 +766,7 @@ def test_stop_case_unknown_run_id_is_a_typed_error(tmp_path):
 def test_stop_case_on_a_run_that_never_ran_is_a_typed_error(tmp_path):
     _make_case(tmp_path)  # planned row: no process, no pidfile
 
-    with pytest.raises(mechanics.BackgroundRunError, match="not? live|no live"):
+    with pytest.raises(mechanics.BackgroundRunError, match="no live"):
         mechanics.stop_case("0001", run_directory=str(tmp_path))
 
     assert _row(tmp_path, "cavity")["status"] == "planned"  # row untouched
