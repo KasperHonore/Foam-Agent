@@ -216,7 +216,16 @@ def _skin_friction(flow_type: str, regime: str,
             formula = ("Blasius smooth pipe: Cf = f/4, "
                        "f = 0.316*Re_D^(-1/4), valid 4000 < Re_D < 1e5 "
                        "(Fanning convention)")
-            if not (BLASIUS_PIPE_RE_MIN < reynolds <= BLASIUS_PIPE_RE_MAX):
+            # Boundary-inclusive with float slack (math.isclose): a Reynolds
+            # number sitting on the stated window's edge — or off it by mere
+            # floating-point dust, e.g. 2.0*0.05/1e-6 = 1e5 + 1e-11 — is not
+            # an extrapolation worth flagging.
+            inside = (
+                BLASIUS_PIPE_RE_MIN <= reynolds <= BLASIUS_PIPE_RE_MAX
+                or math.isclose(reynolds, BLASIUS_PIPE_RE_MIN)
+                or math.isclose(reynolds, BLASIUS_PIPE_RE_MAX)
+            )
+            if not inside:
                 notes.append(
                     f"Re_D = {reynolds:.6g} is outside the Blasius pipe "
                     f"correlation's stated validity "
