@@ -80,6 +80,17 @@ For steady solvers (`simpleFoam`, ...):
 
 - Include ONLY what is needed to run: `application`, time controls
   (`startTime`, `endTime`, `deltaT`), write controls.
+- Transient cases (and any case meant for a background `start_case` run):
+  set `runTimeModifiable true;` explicitly. v10's COMPILED default is
+  false — many tutorials ship `true`, masking it — and without the entry a
+  running solver never re-reads controlDict, so `stop_case`'s graceful
+  stop (finish the step, write the current fields, exit cleanly) is
+  impossible and a stop becomes a hard kill that writes nothing. Harmless
+  on steady cases: the entry only enables mid-run dict re-reads. (Even
+  with it true, a running solver only notices a controlDict edit once the
+  file's mtime clears the 10 s `fileModificationSkew` gate past its last
+  read — `stop_case` handles that itself; a hand edit mid-run may look
+  ignored.)
 - Do NOT include post-processing function objects during initial case
   generation — with ONE sanctioned exception: when the user's question is
   forces or force coefficients (drag, lift, Cd/Cl/Cm), add a `forceCoeffs`

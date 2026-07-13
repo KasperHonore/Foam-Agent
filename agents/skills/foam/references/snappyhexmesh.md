@@ -333,9 +333,14 @@ per-call `timeout` (e.g. 3600):
 2. `mpirun --allow-run-as-root -np 2 snappyHexMesh -overwrite -parallel`
 3. `reconstructParMesh -constant`
 
-- **`--allow-run-as-root` is required**: the Foam-Agent container runs as
-  root and plain `mpirun` refuses (exit 1, "mpirun has detected an attempt
-  to run as root."). `-np` must equal `numberOfSubdomains`.
+- **`--allow-run-as-root` matters only when mpirun actually runs as root**
+  (harvest-verified): the server's own user is the non-root `openfoam`
+  (the entrypoint drops root at startup), so tool-driven mpirun needs no
+  flag — it is kept in the command above because it is harmless. In a
+  root shell (docker-exec debugging) plain `mpirun` refuses (exit 1,
+  "mpirun has detected an attempt to run as root."); add the flag, or
+  export `OMPI_ALLOW_RUN_AS_ROOT=1` and `OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1`
+  instead of editing scripts. `-np` must equal `numberOfSubdomains`.
 - `reconstructParMesh -constant` matches `-overwrite`: the mesh lives in
   `constant/polyMesh`, so reconstruct the constant directory. Run
   `assess_mesh` after reconstruction, and clear stale `processor*`
@@ -344,10 +349,13 @@ per-call `timeout` (e.g. 3600):
   multi-command script is piped into a shell — one more reason each stage
   is its own `run_openfoam_command` call (single commands are unaffected);
   in script files, feed mpirun `< /dev/null`.
-- Scope: this recipe is for MESHING only. Parallel solver runs block a
-  tool call for the whole solve and are deferred to the background-polling
-  capability — do not launch a solver under mpirun through
-  `run_openfoam_command`.
+- Scope: this recipe is for MESHING only. Parallel SOLVER execution needs
+  no mpirun of your own: write a `runParallel` Allrun (`decomposePar` →
+  `runParallel $(getApplication)` → `reconstructPar` — see the Allrun
+  guide) and drive it with `start_case` + `case_status` polling — a
+  detached Allrun is a detached mpirun, verified end to end, with no
+  per-call timeout to outlive. Do not launch a solver under mpirun
+  through `run_openfoam_command`.
 
 ## Common snappy failure modes (for the debugger)
 
@@ -361,7 +369,7 @@ per-call `timeout` (e.g. 3600):
 | Surface bbox ~1000x the domain; castellation refines nothing sensible | mm-authored STL (no unit metadata in STL) — reimport with scale 0.001 (`surfaceTransformPoints` transformations string above) |
 | Mesh floods both sides / `number_of_regions` > 1 | non-watertight surface: castellation leaks through the gap — `inspect_stl` catches it before meshing; fix the geometry, not snappy |
 | Cryptic dictionary parse error on a dict authored on Windows | CRLF line endings — strip CRs (`sed -i 's/\r$//' system/<dict>` via `run_openfoam_command`) |
-| `mpirun` exits 1: "attempt to run as root" | add `--allow-run-as-root` (required in the Foam-Agent container) |
+| `mpirun` exits 1: "attempt to run as root" | root shell (docker exec) — add `--allow-run-as-root` or export the `OMPI_ALLOW_RUN_AS_ROOT[_CONFIRM]=1` pair; the server's own user (`openfoam`) never hits this. Under RunFunctions' `runParallel` the refusal still exits 0 — judge by log content (no `End` marker), never by Allrun's exit code |
 | `run_openfoam_command` times out mid-snappy | raise the call's `timeout` parameter; for real size, go parallel (recipe above) |
 
 Downstream of a verified mesh: the patch names created by `patchInfo` and

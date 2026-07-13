@@ -93,9 +93,10 @@ Verify before telling the user it converged:
   iteration budget) and rerun. Plateaued → a longer run wastes time; change
   relaxation/schemes first (see the error playbook), then rerun.
 - Transient, `incomplete` with "no 'End' marker" and `latest_time` short of
-  `end_time` → crashed or still running; check `fatal_errors` and the
-  divergence evidence before rerunning. `run_case` reruns start from
-  scratch — there is no warm restart.
+  `end_time` → crashed or still running (a live background run answers
+  through `case_status`); check `fatal_errors` and the divergence evidence
+  before rerunning. `run_case`/`start_case` reruns start from scratch —
+  there is no warm restart.
 - Transient, completed, but the quantity of interest is still evolving →
   extend `endTime` and rerun (a full recompute).
 - `incomplete` with "completed, but last final residual ..." → not done: on

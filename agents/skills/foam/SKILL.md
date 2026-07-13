@@ -189,11 +189,47 @@ unsure about a utility's usage. Write it with
 
 ### 5. Run and debug
 
-1. `run_case(case_dir)` — executes Allrun and returns extracted errors.
-   WARNING: every `run_case` call first deletes old logs and time-step
-   folders — reruns always start from scratch; there is no warm restart.
-2. `status: success` means the commands exited cleanly — it does NOT mean
-   the physics is right. After every "successful" run call
+1. Run the case — the execution mode forks on expected wall time:
+   - **Blocking — `run_case(case_dir)`** for short or steady runs (the
+     default: anything expected to finish within minutes). Executes Allrun,
+     holds the call open, returns extracted errors on failure.
+   - **Background — `start_case(case_dir)` + a `case_status` poll loop**
+     for runs long enough that a held-open call is the wrong contract:
+     transient cases, fine meshes, parallel (`runParallel`) Allruns.
+     `start_case` returns the ledger run id immediately; poll
+     `case_status(run_id)` to follow the run — each poll returns typed
+     in-flight progress (the convergence parser on the partial log: latest
+     simulated time vs endTime, per-field residuals, Courant, a
+     verdict-so-far that is `incomplete` by construction mid-run, plus
+     elapsed wall seconds), and the poll that observes the exit stamps the
+     ledger row through the identical completion path a blocking run takes
+     — extracted errors included on failure. Match the poll cadence to the
+     expected run length: every 30–60 s for minutes-long runs, every few
+     minutes for hour-long runs — don't spam `case_status`, and don't go
+     dark on the user either; relay progress in the run's own numbers
+     between polls.
+
+   WARNING: both entry points first delete old logs and time-step folders
+   (`start_case` performs exactly `run_case`'s clean-rerun sweep) — reruns
+   always start from scratch; there is no warm restart. One live solver
+   per case directory: both refuse (typed error) a case that already has
+   a live background run.
+
+   A background run going wrong mid-flight? Judge the polled progress
+   with [references/convergence.md](references/convergence.md) — when the
+   divergence evidence is there (the same evidence the foam-debugger
+   reads post-mortem), `stop_case(run_id)` is the way out: graceful first
+   (the solver finishes the current time step, WRITES the current fields
+   and exits cleanly — requires `runTimeModifiable true;` in controlDict,
+   which step 3's guidance emits on transient cases; scale
+   `grace_seconds` with the case's per-step wall time), then a
+   process-group kill when the grace window expires. A gracefully stopped
+   run keeps its fields for post-mortem, is stamped like any finished
+   run, and carries a deliberate-stop note on its ledger row — it never
+   reads like a crash.
+2. `status: success` (blocking) — or the final `case_status` poll stamping
+   `done` (background) — means the commands exited cleanly — it does NOT
+   mean the physics is right. After every "successful" run call
    `parse_solver_log(case_dir)` — typed residuals, Courant/continuity facts
    and a verdict with evidence, computed instead of read from raw text — and
    judge the numbers with
@@ -218,8 +254,10 @@ unsure about a utility's usage. Write it with
    tool reports "no forceCoeffs output"? The same reference carries the
    working v10 recipe (function object during the run; the post-hoc
    reality per solver family).
-4. On failure, enter the fix loop: delegate to the **foam-debugger** subagent
-   (no subagents? read
+4. On failure, enter the fix loop — a failed background run lands here
+   identically: the poll that observes the exit returns the same extracted
+   errors and the row gates to `debugging`. Delegate to the
+   **foam-debugger** subagent (no subagents? read
    [references/subagents/foam-debugger.md](references/subagents/foam-debugger.md)
    and [references/error-playbook.md](references/error-playbook.md), then do
    it inline). Iterate (diagnose → rewrite files → `run_case`) up to 25 times;
@@ -228,9 +266,9 @@ unsure about a utility's usage. Write it with
 5. Report success/failure honestly, with the failing log excerpts if any.
 
 Every run is recorded automatically in `runs/ledger.md` (the run ledger) —
-no bookkeeping on your side. For run-history questions ("list my runs",
-"what happened to X?") follow the **foam-runs** skill instead of re-reading
-logs.
+no bookkeeping on your side. For run-history and live-run questions ("list
+my runs", "what happened to X?", "how is my run doing?") follow the
+**foam-runs** skill instead of re-reading logs.
 
 ### 6. HPC execution (if the user asks for cluster/SLURM, or `execution: hpc` is their standing default)
 
