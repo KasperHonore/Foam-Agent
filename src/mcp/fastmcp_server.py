@@ -58,6 +58,18 @@ Recommended workflow:
 6. Optional: run_python_script for PyVista visualization (ensure_foam_file
    first) or GMSH mesh generation.
 
+For long, transient, fine-mesh or parallel runs, start_case launches the
+same Allrun detached and returns the case's ledger run id immediately —
+identical clean-rerun sweep and ledger stamping as run_case, without
+blocking your call. Poll case_status with that id at sensible intervals:
+while the process lives you get typed in-flight progress (the convergence
+parser on the partial log — latest simulated time, residuals, Courant, a
+verdict-so-far — plus elapsed wall seconds), and the poll that observes the
+exit stamps the ledger row through the identical completion path a blocking
+run takes, so the ledger cannot tell the two execution modes apart. One
+solver per case directory: run_case and start_case both refuse a case that
+already has a live background run.
+
 After (or during) a run, parse_solver_log turns the solver log into typed
 convergence facts — per-field residuals, Courant numbers, continuity errors,
 completion, and a verdict with evidence. Prefer it over reading raw logs:
@@ -332,6 +344,10 @@ async def run_case(
     The run ledger (runs/ledger.md) follows the run automatically: the row
     is running while Allrun executes, then done with a Result verdict on
     success or debugging on failure. No bookkeeping needed on your side.
+
+    Refuses (typed error) a case that already has a live background run —
+    poll case_status until it finishes. For runs long enough to outlive this
+    blocking call, use start_case + case_status instead.
     """
     case_dir = _require_case_dir(case_dir)
 
@@ -509,6 +525,82 @@ async def parse_solver_log(
         convergence.parse_solver_log, case_dir, log_file or None
     )
     return SolverLogResponse(**dataclasses.asdict(analysis))
+
+
+# ============================================================================
+# Background runs: start_case / case_status (issue #74)
+# ============================================================================
+
+class StartCaseResponse(BaseModel):
+    run_id: str = Field(description="Ledger run id (zero-padded, e.g. '0005') — the handle for case_status and run listings")
+    case: str = Field(description="Case key (case directory relative to the runs root)")
+    case_dir: str = Field(description="Absolute case directory the run executes in")
+    pid: int = Field(description="PID of the detached Allrun process (its own process group)")
+    status: str = Field(description="Ledger Status after the start: 'running'")
+    solver: str = Field(description="Solver stamped on the row (controlDict application entry; '-' when unreadable)")
+    mesh: str = Field(description="Mesh tools stamped on the row (from Allrun; '-' when none found)")
+
+
+@mcp.tool(name="start_case")
+async def start_case(
+    case_dir: str = Field(description="Case directory containing an Allrun script"),
+    ctx: Context = None,
+) -> StartCaseResponse:
+    """Start the case's Allrun in the background and return its ledger run id
+    immediately — the non-blocking counterpart of run_case for long,
+    transient, fine-mesh or parallel runs.
+
+    Performs exactly run_case's preparation and ledger side effects (the
+    clean-rerun sweep, the running stamp with inspected solver/mesh), then
+    launches Allrun detached in its own process group with output captured
+    to Allrun.out/Allrun.err. No watchdog and no timeout: the case's own
+    endTime bounds the run. Poll case_status with the returned run_id to
+    observe progress and have the outcome stamped — without a poll after the
+    run ends, the ledger row stays 'running' until the next status call
+    heals it. Typed errors: missing Allrun; a case that already has a live
+    run; a case directory outside the runs root.
+    """
+    case_dir = _require_case_dir(case_dir)
+    result = await asyncio.to_thread(mechanics.start_case, case_dir)
+    return StartCaseResponse(**dataclasses.asdict(result))
+
+
+class CaseStatusResponse(BaseModel):
+    run_id: str = Field(description="Ledger run id the poll resolved (zero-padded)")
+    case: str = Field(description="Case key (case directory relative to the runs root)")
+    status: str = Field(description="Ledger Status after this poll: 'running' while the process lives; the poll that observes the exit stamps 'done' or 'debugging' through the identical completion path a blocking run takes")
+    result: str = Field(description="Ledger Result: 'pending' mid-run, the parser-backed verdict once done")
+    pid: Optional[int] = Field(description="PID of the live process (None once the run is over)")
+    elapsed_seconds: Optional[float] = Field(description="Wall seconds since the run started (None once the run is over)")
+    progress: Optional[SolverLogResponse] = Field(description="Typed in-flight progress from the convergence parser on the partial solver log — verdict 'incomplete' is correct mid-run; None before the solver log exists or once the run is over")
+    errors: List[dict] = Field(description="Extracted errors when this poll's completion gate landed on 'debugging' (empty otherwise): [{file, error_content}]")
+
+
+@mcp.tool(name="case_status")
+async def case_status(
+    run_id: str = Field(description="Ledger run id from start_case or runs/ledger.md (zero-padded, e.g. '0003'; unpadded '3' is accepted)"),
+    ctx: Context = None,
+) -> CaseStatusResponse:
+    """Poll a background run: typed progress while it lives, the final ledger
+    state once it exits.
+
+    While the process is alive, returns 'running' plus the convergence
+    parser's typed reading of the in-flight log (latest simulated time,
+    per-field residuals, Courant, verdict-so-far) and elapsed wall time —
+    numbers, never eyeballed log tails. The poll that observes the exit
+    stamps the row through the identical completion path a blocking run
+    takes: error extraction gates to done with the parser-backed Result, or
+    to debugging with the extracted errors. A run the server lost track of
+    (restart mid-run) reconciles through the pidfile in the case directory:
+    a live process reports running, a dead one with a row stuck 'running'
+    is stamped lazily on this poll. Poll at intervals proportionate to the
+    expected run length; a typed error names an unknown run id.
+    """
+    status = await asyncio.to_thread(mechanics.case_status, run_id)
+    payload = dataclasses.asdict(status)
+    payload["progress"] = (SolverLogResponse(**payload["progress"])
+                           if payload["progress"] is not None else None)
+    return CaseStatusResponse(**payload)
 
 
 # ============================================================================
