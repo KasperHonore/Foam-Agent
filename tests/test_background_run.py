@@ -15,6 +15,7 @@ Key-free, no docker, no OpenFOAM, no real solver; runs on Windows and Linux.
 """
 
 import json
+import os
 import subprocess
 import sys
 import time
@@ -146,6 +147,16 @@ def _poll_until(run_id, runs_root, predicate, timeout=20.0):
             return status
         time.sleep(0.05)
     raise AssertionError(f"case_status never reached the expected state within {timeout}s")
+
+
+def _wait_for_file(path, timeout=20.0):
+    """Wait until the child process has written a file (startup handshake)."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if Path(path).exists():
+            return
+        time.sleep(0.02)
+    raise AssertionError(f"{path} never appeared within {timeout}s")
 
 
 # ---------------------------------------------------------------------------
@@ -445,3 +456,121 @@ def test_run_case_proceeds_once_the_background_run_is_over(tmp_path, fake_allrun
     assert errors == []
     row = _row(tmp_path, "cavity")
     assert (row["status"], row["result"]) == ("done", "converged")
+
+
+# ---------------------------------------------------------------------------
+# Pidfile identity hardening (#75): (pid, starttime) + zombie awareness.
+# Harvest #73: the pid namespace resets on a container restart so pid reuse
+# is real; kill(pid, 0) succeeds on a zombie and PID-1 python never reaps
+# orphans. (pid, starttime from /proc/<pid>/stat field 22) is the airtight
+# same-process identity; the state letter is the honest liveness signal.
+# ---------------------------------------------------------------------------
+
+# A representative /proc/<pid>/stat line (the harvest's planted sleep child):
+# state is field 3, starttime field 22 (jiffies since HOST boot).
+STAT_LINE = (
+    "2069 (sleep) S 1 2069 2069 0 -1 4194560 145 0 0 0 0 0 0 0 20 0 1 0 "
+    "987690 5619712 88 18446744073709551615 0 0 0 0 0 0 0 0 0 0 0 0 17 3 0 0 0 0 0"
+)
+
+
+def test_parse_proc_stat_reads_state_and_starttime():
+    assert mechanics._parse_proc_stat(STAT_LINE) == ("S", 987690)
+
+
+def test_parse_proc_stat_handles_parentheses_in_the_command_name():
+    # comm (field 2) may itself contain spaces and parentheses — the parse
+    # must anchor on the LAST ')', not the first.
+    line = ("42 (a (weird) name) Z 1 42 42 0 -1 4194560 "
+            "0 0 0 0 0 0 0 0 20 0 1 0 4242 0")
+    assert mechanics._parse_proc_stat(line) == ("Z", 4242)
+
+
+def test_parse_proc_stat_rejects_garbage():
+    assert mechanics._parse_proc_stat("not a stat line") is None
+    # A truncated line still yields the state; starttime is honestly unknown.
+    assert mechanics._parse_proc_stat("7 (x) R 1 7") == ("R", None)
+
+
+def test_start_case_records_the_process_starttime_identity(tmp_path, fake_allrun):
+    case_dir = _make_case(tmp_path)
+    fake_allrun(INCOMPLETE_LOG)
+
+    start = mechanics.start_case(case_dir, run_directory=str(tmp_path))
+
+    info = json.loads((Path(case_dir) / "Allrun.pid").read_text(encoding="utf-8"))
+    assert "starttime" in info                    # pid-reuse-proof identity
+    if os.path.isdir("/proc"):
+        stat = Path(f"/proc/{start.pid}/stat").read_text()
+        assert info["starttime"] == mechanics._parse_proc_stat(stat)[1]
+    else:
+        assert info["starttime"] is None          # Windows: no /proc interface
+    _cue_exit(case_dir)
+
+
+@pytest.mark.skipif(not os.path.isdir("/proc"),
+                    reason="needs /proc for the starttime identity")
+def test_pidfile_with_a_mismatched_starttime_reads_dead(tmp_path, fake_allrun,
+                                                        isolated_registry):
+    # Pid reuse after a container restart: same pid, different process — the
+    # recorded starttime disagrees, so the run must NOT read as running.
+    case_dir = _make_case(tmp_path)
+    fake_allrun(INCOMPLETE_LOG)
+    start = mechanics.start_case(case_dir, run_directory=str(tmp_path))
+    _wait_for_file(Path(case_dir) / "log.icoFoam")  # the heal below reads logs
+    process = isolated_registry[start.run_id].process
+    isolated_registry.clear()                     # the server-restart stand-in
+    pidfile = Path(case_dir) / "Allrun.pid"
+    info = json.loads(pidfile.read_text(encoding="utf-8"))
+    info["starttime"] = (info["starttime"] or 0) + 12345
+    pidfile.write_text(json.dumps(info))
+
+    status = mechanics.case_status(start.run_id, run_directory=str(tmp_path))
+
+    # Not our process, so the stuck row heals through the completion path
+    # (INCOMPLETE_LOG never reached End -> debugging).
+    assert status.status == "debugging"
+    _cue_exit(case_dir)
+    process.wait(timeout=20)
+
+
+def test_zombie_state_reads_dead_for_pidfile_liveness(tmp_path, fake_allrun,
+                                                      isolated_registry, monkeypatch):
+    # kill(pid, 0) succeeds on a zombie; the state letter must overrule it.
+    # No real zombie can be staged portably, so the /proc read is substituted
+    # at its seam and the crafted 'Z' must read as dead.
+    case_dir = _make_case(tmp_path)
+    fake_allrun(INCOMPLETE_LOG)
+    start = mechanics.start_case(case_dir, run_directory=str(tmp_path))
+    _wait_for_file(Path(case_dir) / "log.icoFoam")  # the heal below reads logs
+    process = isolated_registry[start.run_id].process
+    isolated_registry.clear()
+    monkeypatch.setattr(mechanics, "_read_proc_stat", lambda pid: ("Z", 123))
+
+    status = mechanics.case_status(start.run_id, run_directory=str(tmp_path))
+
+    assert status.status == "debugging"           # healed as dead, not running
+    _cue_exit(case_dir)
+    process.wait(timeout=20)
+
+
+def test_legacy_pidfile_without_starttime_keeps_working(tmp_path, fake_allrun,
+                                                        isolated_registry):
+    # A pidfile written before #75 has no starttime — behavior must be
+    # exactly the old pid-alive check.
+    case_dir = _make_case(tmp_path)
+    fake_allrun(INCOMPLETE_LOG)
+    start = mechanics.start_case(case_dir, run_directory=str(tmp_path))
+    process = isolated_registry[start.run_id].process
+    isolated_registry.clear()
+    pidfile = Path(case_dir) / "Allrun.pid"
+    info = json.loads(pidfile.read_text(encoding="utf-8"))
+    info.pop("starttime", None)
+    pidfile.write_text(json.dumps(info))
+
+    status = mechanics.case_status(start.run_id, run_directory=str(tmp_path))
+
+    assert status.status == "running"
+    assert status.pid == start.pid
+    _cue_exit(case_dir)
+    process.wait(timeout=20)

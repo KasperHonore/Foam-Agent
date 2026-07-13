@@ -1020,11 +1020,17 @@ def _stamp_slurm_outcome(job_id: str, status: str) -> None:
 
 PIDFILE_BASENAME = "Allrun.pid"
 
+# Whether this platform exposes the procfs the (pid, starttime) identity and
+# the zombie check read. False on Windows (and macOS), where the platform
+# branch of _pid_alive is the whole liveness verdict.
+_HAS_PROC = os.path.isdir("/proc")
+
 
 class BackgroundRunError(RuntimeError):
-    """A background run could not be started or resolved: missing Allrun,
-    a case that already has a live run, an out-of-tree case directory, or
-    an unknown run id."""
+    """A background run could not be started, stopped or resolved: missing
+    Allrun, a case that already has a live run, an out-of-tree case
+    directory, an unknown run id, or a stop against a run that is not
+    live."""
 
 
 @dataclass
@@ -1104,19 +1110,67 @@ def _pid_alive(pid: Optional[int]) -> bool:
     return True
 
 
+def _parse_proc_stat(text: str) -> Optional[Tuple[str, Optional[int]]]:
+    """(state letter, starttime) out of a /proc/<pid>/stat line, else None.
+
+    Pure parse, unit-testable without a live /proc. The comm field (field 2)
+    is parenthesized and may itself contain spaces and parentheses, so the
+    split anchors on the LAST ')'. State is field 3 ('Z' = zombie); starttime
+    is field 22, jiffies since HOST boot — boot-monotonic across container
+    restarts, so (pid, starttime) is an airtight same-process identity
+    (harvest #73: the pid namespace resets on restart and reuse is real).
+    """
+    head, sep, tail = text.rpartition(")")
+    if not sep:
+        return None
+    fields = tail.split()
+    if not fields:
+        return None
+    state = fields[0]
+    starttime: Optional[int] = None
+    if len(fields) >= 20:  # fields[0] is field 3, so field 22 is fields[19]
+        try:
+            starttime = int(fields[19])
+        except ValueError:
+            starttime = None
+    return state, starttime
+
+
+def _read_proc_stat(pid: int) -> Optional[Tuple[str, Optional[int]]]:
+    """(state, starttime) from /proc/<pid>/stat, or None where that interface
+    is unavailable (Windows/macOS) or the process entry is gone."""
+    try:
+        with open(f"/proc/{pid}/stat", encoding="ascii", errors="replace") as fh:
+            return _parse_proc_stat(fh.read())
+    except OSError:
+        return None
+
+
+def _proc_starttime(pid: int) -> Optional[int]:
+    """The process's boot-monotonic starttime, or None without /proc."""
+    stat = _read_proc_stat(pid)
+    return stat[1] if stat is not None else None
+
+
 def _pidfile_path(case_dir: str) -> str:
     return os.path.join(case_dir, PIDFILE_BASENAME)
 
 
 def _write_pidfile(case_dir: str, run_id: str, pid: int, started: float) -> None:
-    """Record the detached run in the case directory — the recovery truth."""
+    """Record the detached run in the case directory — the recovery truth.
+
+    Carries the (pid, starttime) identity (starttime null where /proc is
+    unavailable) so a later reader can tell our process from an unrelated
+    one that reused the pid after a container restart (#73).
+    """
     pgid = None
     if hasattr(os, "getpgid"):
         try:
             pgid = os.getpgid(pid)
         except OSError:
             pgid = None  # the child is already gone; liveness will say so
-    payload = {"run_id": run_id, "pid": pid, "pgid": pgid, "started": started}
+    payload = {"run_id": run_id, "pid": pid, "pgid": pgid, "started": started,
+               "starttime": _proc_starttime(pid)}
     with open(_pidfile_path(case_dir), "w", encoding="utf-8") as fh:
         json.dump(payload, fh)
 
@@ -1136,6 +1190,35 @@ def _read_pidfile(case_dir: str) -> Optional[dict]:
     return data
 
 
+def _pidfile_alive(info: dict) -> bool:
+    """Liveness for a pidfile-recorded run: pid alive AND the same process
+    AND not a zombie.
+
+    Harvest #73 hardening: kill(pid, 0) succeeds on a zombie (PID-1 python
+    never reaps orphans), so the /proc state letter overrules it; and the
+    pid namespace resets on a container restart, so a recorded starttime
+    that disagrees with the live process means the pid was REUSED by an
+    unrelated process. A pidfile without starttime (pre-#75) and platforms
+    without /proc (Windows: _pid_alive's handle check) keep the old verdict.
+    """
+    pid = info["pid"]
+    if not _pid_alive(pid):
+        return False
+    stat = _read_proc_stat(pid)
+    if stat is None:
+        # No /proc on this platform -> the platform check above is final.
+        # /proc exists but the entry vanished -> it died in the gap.
+        return not _HAS_PROC
+    state, starttime = stat
+    if state == "Z":
+        return False  # an unreaped corpse is not a live run
+    recorded = info.get("starttime")
+    if isinstance(recorded, int) and isinstance(starttime, int) \
+            and recorded != starttime:
+        return False  # pid reused by an unrelated process after a restart
+    return True
+
+
 def _live_background_run(case_dir: str) -> Optional[Tuple[Optional[str], int]]:
     """(run_id, pid) of the case's live background run, or None.
 
@@ -1148,7 +1231,7 @@ def _live_background_run(case_dir: str) -> Optional[Tuple[Optional[str], int]]:
         if os.path.abspath(run.case_dir) == case_dir and run.process.poll() is None:
             return run_id, run.process.pid
     info = _read_pidfile(case_dir)
-    if info is not None and _pid_alive(info["pid"]):
+    if info is not None and _pidfile_alive(info):
         return info.get("run_id"), info["pid"]
     return None
 
@@ -1305,7 +1388,7 @@ def case_status(run_id: str, run_directory: Optional[str] = None) -> BackgroundR
         return _final_status(key, run.runs_root, errors)
 
     info = _read_pidfile(case_dir)
-    if info is not None and _pid_alive(info["pid"]):
+    if info is not None and _pidfile_alive(info):
         started = info.get("started")
         elapsed = time.time() - started if isinstance(started, (int, float)) else None
         return _running_status(key, row, case_dir, info["pid"], elapsed)
