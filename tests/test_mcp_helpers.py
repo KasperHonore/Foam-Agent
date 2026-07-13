@@ -644,3 +644,31 @@ def test_case_status_surfaces_the_typed_error(tmp_path, monkeypatch):
     fn = getattr(fs.case_status, "fn", fs.case_status)
     with pytest.raises(mechanics.BackgroundRunError, match="0042"):
         asyncio.run(fn(run_id="0042"))
+
+
+def test_run_case_returns_the_evidence_when_the_case_dir_vanished(tmp_path, monkeypatch):
+    # Issue #78, wrapper half: when the case directory disappears mid-run,
+    # the mechanics layer reports the infrastructure evidence — the wrapper's
+    # log-file listing must not crash before returning it.
+    import asyncio
+    import shutil
+
+    case_dir = tmp_path / "gone"
+    case_dir.mkdir()
+    evidence = [{"file": "case_dir", "error_content": "Case directory vanished"}]
+
+    def vanish_and_report(case_dir_arg, timeout, retries):
+        shutil.rmtree(case_dir_arg)
+        return evidence
+
+    monkeypatch.setattr(fs.mechanics, "run_allrun_and_collect_errors", vanish_and_report)
+
+    class _Ctx:
+        async def info(self, message):
+            pass
+
+    fn = getattr(fs.run_case, "fn", fs.run_case)
+    resp = asyncio.run(fn(case_dir=str(case_dir), timeout=60, ctx=_Ctx()))
+    assert resp.status == "failed"
+    assert resp.errors == evidence
+    assert resp.log_files == []
