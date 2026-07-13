@@ -1,8 +1,10 @@
 # Writing the Allrun script
 
 The Allrun script automates the whole run. It executes inside the sourced
-OpenFOAM v10 environment via the `run_case` tool (which also cleans old logs
-and time folders first, and extracts errors from `log.*` files afterwards).
+OpenFOAM v10 environment via the `run_case` tool — or detached via
+`start_case` for runs too long to block a call. Both clean old logs and
+time folders first and extract errors from `log.*` files afterwards (for a
+background run, on the `case_status` poll that observes the exit).
 
 ## Structure
 
@@ -23,7 +25,12 @@ runApplication $(getApplication)
 `runApplication <cmd>` writes `log.<cmd>` and stops on error — this is what
 the error extraction relies on, so prefer it over raw commands. Use
 `runParallel` + `decomposePar`/`reconstructPar` only when the user asked for
-parallel execution.
+parallel execution (v10 signature: `runParallel $(getApplication)` — nProcs
+read from `system/decomposeParDict`, `-np N` overrides; mpirun's stdin is
+already handled inside runParallel). A parallel Allrun IS how parallel
+solver runs happen: drive a long one with `start_case` + `case_status`
+polling (a short parallel run may still use blocking `run_case`) — the
+foam skill's run step names the fork.
 
 ## Command selection rules
 

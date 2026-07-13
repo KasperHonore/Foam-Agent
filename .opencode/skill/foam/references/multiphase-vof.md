@@ -30,7 +30,8 @@ convention and a common training-prior trap.
 Write `0/alpha.water` with `internalField uniform 0;`, then run `setFields`
 in Allrun (after mesh generation, before the solver). `setFieldsDict`'s
 `defaultFieldValues` resets the field on every run, so this is idempotent
-under `run_case`'s clean-rerun behavior — no `.orig` copy dance needed.
+under the clean-rerun sweep both `run_case` and `start_case` perform — no
+`.orig` copy dance needed.
 
 ## Numerics that differ from single-phase
 
@@ -56,7 +57,7 @@ under `run_case`'s clean-rerun behavior — no `.orig` copy dance needed.
   `U` → `pressureInletOutletVelocity`, `alpha.water` → `inletOutlet`
   (`inletValue uniform 0`).
 
-## Transient success checks (after run_case says "success")
+## Transient success checks (run_case "success", or the final case_status poll stamping done)
 
 Read the solver log tail and verify:
 
