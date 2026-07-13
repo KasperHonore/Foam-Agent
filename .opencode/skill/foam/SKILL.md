@@ -52,6 +52,7 @@ below repeat the load-bearing ones where extra judgment guidance applies.
 | Judging run outcomes (after `parse_solver_log`) | [references/convergence.md](references/convergence.md) |
 | Judging mesh quality (after `assess_mesh`) | [references/mesh-quality.md](references/mesh-quality.md) |
 | CAD geometry provided as an STL file (snappyHexMesh pathway) | [references/snappyhexmesh.md](references/snappyhexmesh.md) |
+| Turbulent case — model choice, wall treatment / y+ target, layer sizing, inlet k/epsilon/omega | [references/turbulence.md](references/turbulence.md) |
 | Force/coefficient questions (drag, lift, Cd/Cl/Cm) | [references/forces.md](references/forces.md) |
 | A run failed — diagnosing errors | [references/error-playbook.md](references/error-playbook.md) |
 | Cluster / SLURM execution | [references/hpc-slurm.md](references/hpc-slurm.md) |
@@ -101,6 +102,15 @@ never need restating.
      Foundation v10 the reliable path is the object active during the solver
      run, and this is the sanctioned exception to the function-object ban.
      Recipe and worked block: [references/forces.md](references/forces.md).
+   - Turbulent flow expected? Decide the model and the wall-treatment
+     regime (the target y+) NOW with
+     [references/turbulence.md](references/turbulence.md) — the selection
+     ladder and the y+ band table. Unsure it is even turbulent?
+     `estimate_wall_spacing` reports the Reynolds number with a named
+     regime verdict — trust it over recall. The decision adds
+     `constant/momentumTransport` and the 0/ turbulence fields
+     (k/epsilon/omega/nut per model) to the file list, and fixes the
+     first-cell height the mesh step must deliver.
 5. Present the plan (case name, solver, file list, mesh strategy) and confirm.
 
 ### 2. Set up the mesh (only if custom/GMSH/STL mesh)
@@ -131,6 +141,12 @@ never need restating.
   in Foundation v10 vocabulary (`surfaceFeatures`, not
   `surfaceFeatureExtract`); for ESI users nothing changes — detect, name it,
   and offer `translate_case_to_esi` at the end as usual (best-effort).
+- **Turbulent case, any mesh branch**: give foam-mesher the flow conditions
+  (velocity, characteristic length, kinematic viscosity) and the target y+
+  from step 1 — its wall/layer sizing consumes `estimate_wall_spacing` on
+  both the GMSH and snappy branches, bridged per
+  [references/turbulence.md](references/turbulence.md); boundary-layer
+  knobs are computed, not eyeballed.
 - **blockMesh**: nothing to do here — `blockMeshDict` is generated in step 3
   and blockMesh runs inside Allrun.
 - **Validate the mesh** (any source): `assess_mesh(case_dir)` — typed census,
@@ -152,7 +168,12 @@ contains the consistency rules (cross-file coherence, dimensions, fvSolution
 `*Final` entries, controlDict constraints). For free-surface/VOF cases
 (interFoam family) additionally follow
 [references/multiphase-vof.md](references/multiphase-vof.md) — the file
-inventory and numerics differ substantially from single-phase.
+inventory and numerics differ substantially from single-phase. For
+turbulent cases, `constant/momentumTransport` and the wall BC sets on the
+0/ turbulence fields follow
+[references/turbulence.md](references/turbulence.md), and the inlet
+k/epsilon/omega values come from `estimate_turbulence_inlet` — computed,
+never recalled.
 
 Use the `tutorial_reference` from `find_similar_case` as your template where it
 matches; if it is a weak match, rely on your own OpenFOAM knowledge and use
@@ -183,7 +204,12 @@ unsure about a utility's usage. Write it with
    directories were written (`list_case_files`), and for VOF cases do the
    raw-log checks in
    [references/multiphase-vof.md](references/multiphase-vof.md) — phase
-   conservation and alpha bounds are invisible to the parser.
+   conservation and alpha bounds are invisible to the parser. Turbulent
+   case? Verify the achieved y+ with the harvested recipe in
+   [references/turbulence.md](references/turbulence.md) (the solver-wrapped
+   `-postProcess` form; judge the per-patch average against the target
+   band) — a miss is one `estimate_wall_spacing` rescale, re-bridge and
+   remesh away, per the loop in that reference.
 3. Force/coefficient answers come from `parse_force_coefficients(case_dir)`
    — typed Cd/Cl/Cm with tail-window statistics and the reference values,
    and the run's ledger Key result cell filled as a side effect — never

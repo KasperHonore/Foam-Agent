@@ -42,6 +42,7 @@ for full context, and read the case files involved before proposing a fix.
 | `cannot find file ... 0/<field>` | Solver needs a field file you didn't generate — create it |
 | `patch ... not found` / patch count mismatch | `0/` field patch names don't match `constant/polyMesh/boundary` — use `read_mesh_boundaries` and align |
 | Floating point exception / diverging residuals | Time step too large, bad initial values, or wrong scheme; reduce `deltaT`, add relaxation, use more robust schemes (e.g. `upwind` div) |
+| Turbulent run diverges within the first steps, k/epsilon/omega exploding | Inlet/initial turbulence values orders of magnitude off, or wall treatment mismatched — recompute with `estimate_turbulence_inlet` (never re-guess by hand) and work the failure-mode table in [turbulence.md](turbulence.md) |
 | Steady run "succeeds" but residuals plateau (limit cycle, `residualControl` never met) | NOT converged even though `run_case` says success. Lower `relaxationFactors` (e.g. p 0.3→0.2, U 0.7→0.5), raise `endTime` (iteration budget), rerun; confirm `SIMPLE solution converged` in the log tail |
 | `Continuity errors` blowing up | Check pressure solver + `pRefCell`/`pRefValue` (closed incompressible domains) |
 | Solver exits without `End` marker | Crash or timeout — read the log tail; often numerical instability |
