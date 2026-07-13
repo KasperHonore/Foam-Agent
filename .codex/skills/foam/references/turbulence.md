@@ -30,12 +30,12 @@ requirements and divergence surface. Rung 0 is decided by evidence:
 verdict (laminar / transitional / turbulent) — trust that verdict over
 recall.
 
-- **Rung 0 — laminar.** The regime verdict says laminar (the classic
-  bands it applies: internal pipe/duct flow up to Re ~ 2300, external
-  flat-plate up to Re_x ~ 5e5). No turbulence model, no wall functions,
-  no y+ target — and the achieved-y+ verify step is structurally
-  inapplicable (see the recipe section: laminar solvers reject it three
-  ways). The icoFoam family is laminar by construction and reads no
+- **Rung 0 — laminar.** The regime verdict says laminar — the Reynolds
+  thresholds behind the verdict are pinned and documented in the tool
+  itself; trust it over recalled transition numbers. No turbulence
+  model, no wall functions, no y+ target — and the achieved-y+ verify
+  step is structurally inapplicable (see the recipe section: laminar
+  solvers reject it three ways). The icoFoam family is laminar by construction and reads no
   turbulence dict; simpleFoam/pisoFoam/pimpleFoam take
   `simulationType laminar;` in `constant/momentumTransport`.
 - **Rung 1 — kOmegaSST.** The default turbulent rung for wall-bounded
@@ -222,11 +222,11 @@ count):
 - local surface cell size: `dx = B / 2^L`
 - last-layer thickness: `tN = t1 * r^(N-1)`
 - **`finalLayerThickness = tN / dx`** — the knob names the LAST layer
-- **`minThickness`** (also relative) is the collapse floor: snappy
-  locally collapses any layer thinner than it. Keep it well below the
-  FIRST layer's relative thickness `t1 / dx` (a quarter of it is a safe
-  start) or coverage silently vanishes exactly where the y+ target
-  lives — and read the snappy log for actual coverage either way.
+- **`minThickness`** (also relative) is the collapse floor — layers
+  below it are silently collapsed, not failed
+  ([snappyhexmesh.md](snappyhexmesh.md)). Keep it well below the FIRST
+  layer's relative thickness `t1 / dx` (a quarter of it is a safe
+  start) or coverage vanishes exactly where the y+ target lives.
 - **`nSurfaceLayers = N`**, `expansionRatio = r` — echo what the tool
   used.
 - total stack thickness: `T = t1 * (r^N - 1) / (r - 1)`. The suggested
