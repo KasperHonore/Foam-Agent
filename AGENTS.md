@@ -68,6 +68,9 @@ src/
   stlcheck.py          # structured surfaceCheck STL inspection: watertightness,
                        # defective-edge counts, bounding box, units suspicion,
                        # verdict with evidence
+  wallspacing.py       # pure wall-spacing calculator: first-cell centre/height
+                       # from flow conditions and a target y+, named correlations,
+                       # regime verdict with evidence
   mcp/                 # FastMCP server exposing mechanics as tools (see src/mcp/README.md)
   translation/         # rules-based Foundation→ESI case translation
 database/

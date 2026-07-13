@@ -339,12 +339,12 @@ def test_inspect_stl_surfaces_the_typed_error(tmp_path, monkeypatch):
 STL_FIXTURE = REPO / "tests" / "fixtures" / "stl" / "watertight_cube.stl"
 
 
-def test_import_geometry_is_registered_as_tool_twenty_one():
+def test_import_geometry_is_registered():
     import asyncio
 
     names = {t.name for t in asyncio.run(fs.mcp.list_tools())}
     assert "import_geometry" in names
-    assert len(names) == 21  # the geometry importer joins the 20 existing tools
+    # The tool count is pinned by the newest tool's registration test below.
 
 
 def test_import_geometry_returns_the_typed_result(tmp_path):
@@ -370,3 +370,50 @@ def test_import_geometry_surfaces_the_typed_error(tmp_path):
     with pytest.raises(mechanics.GeometryImportError, match="does not exist"):
         asyncio.run(fn(case_dir=str(tmp_path), src_path=str(tmp_path / "ghost.stl"),
                        scale=None, timeout=600))
+
+
+# ---------------------------------------------------------------------------
+# estimate_wall_spacing (#67): pure wall-spacing calculator, callable via MCP
+# ---------------------------------------------------------------------------
+
+def test_estimate_wall_spacing_is_registered_as_tool_twenty_two():
+    import asyncio
+
+    names = {t.name for t in asyncio.run(fs.mcp.list_tools())}
+    assert "estimate_wall_spacing" in names
+    assert len(names) == 22  # the wall-spacing calculator joins the 21 existing tools
+
+
+def test_estimate_wall_spacing_returns_the_typed_estimate():
+    # The first purely computational tool: no case dir, no filesystem, no
+    # subprocess stub — the wrapper passes scalars through and returns the
+    # typed result unchanged. Expected values are the frozen known-value
+    # literals from test_wall_spacing_unit.py (hand-derived, cited there).
+    import asyncio
+
+    fn = getattr(fs.estimate_wall_spacing, "fn", fs.estimate_wall_spacing)
+    resp = asyncio.run(fn(velocity=50.0, characteristic_length=1.0,
+                          kinematic_viscosity=1.5e-5, target_y_plus=1.0,
+                          flow_type="external", expansion_ratio=1.2))
+
+    assert resp.regime == "turbulent"
+    assert resp.reynolds_number.value == pytest.approx(3.33333e6, rel=1e-4)
+    assert "Schlichting" in resp.skin_friction_coefficient.formula
+    assert resp.first_cell_centre_distance.value == pytest.approx(
+        7.67185e-6, rel=1e-4)
+    assert resp.first_cell_height.value == pytest.approx(
+        1.53437e-5, rel=1e-4)
+    assert resp.suggested_layer_count.value == 31
+    assert resp.evidence
+
+
+def test_estimate_wall_spacing_surfaces_the_typed_error():
+    import asyncio
+
+    import wallspacing
+
+    fn = getattr(fs.estimate_wall_spacing, "fn", fs.estimate_wall_spacing)
+    with pytest.raises(wallspacing.WallSpacingError, match="velocity"):
+        asyncio.run(fn(velocity=-1.0, characteristic_length=1.0,
+                       kinematic_viscosity=1.5e-5, target_y_plus=1.0,
+                       flow_type="external", expansion_ratio=1.2))
