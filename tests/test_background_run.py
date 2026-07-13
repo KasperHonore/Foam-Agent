@@ -15,7 +15,6 @@ Key-free, no docker, no OpenFOAM, no real solver; runs on Windows and Linux.
 """
 
 import json
-import os
 import subprocess
 import sys
 import time
@@ -147,15 +146,6 @@ def _poll_until(run_id, runs_root, predicate, timeout=20.0):
             return status
         time.sleep(0.05)
     raise AssertionError(f"case_status never reached the expected state within {timeout}s")
-
-
-def _wait_dead(pid, timeout=20.0) -> None:
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        if not mechanics._pid_alive(pid):
-            return
-        time.sleep(0.05)
-    raise AssertionError(f"pid {pid} still alive after {timeout}s")
 
 
 # ---------------------------------------------------------------------------
