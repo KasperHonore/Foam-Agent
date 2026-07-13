@@ -1120,7 +1120,7 @@ def _parse_proc_stat(text: str) -> Optional[Tuple[str, Optional[int]]]:
     restarts, so (pid, starttime) is an airtight same-process identity
     (harvest #73: the pid namespace resets on restart and reuse is real).
     """
-    head, sep, tail = text.rpartition(")")
+    _, sep, tail = text.rpartition(")")
     if not sep:
         return None
     fields = tail.split()
@@ -1252,8 +1252,10 @@ def start_case(case_dir: str, run_directory: Optional[str] = None) -> Background
     the running stamp with the inspected solver/mesh, then the clean-rerun
     sweep — and launches Allrun in its own session/process group with
     stdout/stderr captured to Allrun.out/Allrun.err, the same files run_case
-    writes. A pidfile (Allrun.pid: run id, pid, process group, start time)
-    lands in the case directory and the run is registered in-memory keyed by
+    writes. A pidfile (Allrun.pid: run id, pid, process group, wall start
+    time, plus the /proc starttime that makes the pid-reuse-proof process
+    identity — null where /proc is unavailable) lands in the case directory
+    and the run is registered in-memory keyed by
     the ledger run id; poll case_status with that id to observe progress and
     have the outcome stamped. No watchdog and no timeout: the case's own
     endTime bounds the run.
@@ -1345,8 +1347,13 @@ def _running_status(run_id: str, row: ledger.Row, case_dir: str,
                                progress=_in_flight_progress(case_dir), errors=[])
 
 
+def _ledger_row(runs_root: str, run_id: str) -> ledger.Row:
+    """The row for an id known to exist (resolved earlier in the call)."""
+    return next(r for r in ledger.read_rows(runs_root) if r.id == run_id)
+
+
 def _final_status(run_id: str, runs_root: str, errors: List[dict]) -> BackgroundRunStatus:
-    row = next(r for r in ledger.read_rows(runs_root) if r.id == run_id)
+    row = _ledger_row(runs_root, run_id)
     return BackgroundRunStatus(run_id=run_id, case=row.case, status=row.status,
                                result=row.result, pid=None, elapsed_seconds=None,
                                progress=None, errors=errors)
@@ -1601,7 +1608,7 @@ def _record_stop_note(runs_root: str, run_id: str, method: str) -> str:
     (ledger.set_note — the same call set_run_note makes), appending to any
     existing note instead of clobbering it. The note is what keeps a stopped
     run from reading like a crash next week."""
-    row = next(r for r in ledger.read_rows(runs_root) if r.id == run_id)
+    row = _ledger_row(runs_root, run_id)
     text = f"stopped deliberately via stop_case ({method})"
     existing = row.notes.strip()
     note = f"{existing}; {text}" if existing and existing != ledger.PLACEHOLDER else text
@@ -1611,7 +1618,7 @@ def _record_stop_note(runs_root: str, run_id: str, method: str) -> str:
 
 def _stopped_status(run_id: str, runs_root: str, *, method: str,
                     note: Optional[str], errors: List[dict]) -> BackgroundRunStop:
-    row = next(r for r in ledger.read_rows(runs_root) if r.id == run_id)
+    row = _ledger_row(runs_root, run_id)
     return BackgroundRunStop(run_id=run_id, case=row.case, status=row.status,
                              result=row.result, method=method, note=note,
                              errors=errors)
