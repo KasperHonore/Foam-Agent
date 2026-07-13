@@ -28,6 +28,11 @@ correlations, never recomputed the module's way. Correlation provenance
   profile — two exact derivation paths that must agree.
 - The spacing chain (all four sources print it identically):
   tau_w = (Cf/2)*rho*U^2, u_tau = sqrt(tau_w/rho), y1 = y+*nu/u_tau.
+- Independent anchor for the external chain: the one-fifth-power-law local
+  skin friction Cf = 0.0592*Re_x^(-1/5), valid 5e5 < Re_x < 1e7 (Incropera,
+  Fundamentals of Heat and Mass Transfer, eq. 7.34) — a DIFFERENT published
+  correlation from the pinned Schlichting log law, so a shared misreading
+  cannot make both agree.
 
 Regime thresholds under test: external flat plate laminar below Re_x = 5e5
 (transition onset; Incropera sec. 7.2), fully turbulent at/above Re_x = 3e6
@@ -111,6 +116,20 @@ def test_external_turbulent_boundary_layer_and_layer_count():
     assert estimate.boundary_layer_thickness.value == pytest.approx(
         1.83496e-2, rel=1e-4)
     assert estimate.suggested_layer_count.value == 31
+
+
+def test_external_turbulent_matches_the_power_law_anchor():
+    # Independent published anchor (module docstring): the one-fifth-power
+    # law Cf = 0.0592*Re_x^(-1/5) — Incropera eq. 7.34, a different
+    # published correlation than the pinned Schlichting log law — gives
+    # 0.0592*(3.33333e6)^(-0.2) = 2.93593e-3 at the known-value Re_x.
+    # Inside their common validity window the two correlations agree to a
+    # few percent (4.2% here); a shared misreading of either could not
+    # keep them this close.
+    estimate = _external_turbulent()
+
+    assert estimate.skin_friction_coefficient.value == pytest.approx(
+        2.93593e-3, rel=0.05)
 
 
 def test_every_numeric_field_names_its_formula():
@@ -412,6 +431,23 @@ def test_defaults_are_external_flow_at_snappy_expansion_ratio():
     assert estimate.expansion_ratio == 1.2
     assert estimate.suggested_layer_count.value == \
         _external_turbulent().suggested_layer_count.value
+
+
+def test_no_extrapolation_note_on_the_validity_boundary():
+    # Re_D sitting exactly on the Blasius window's edges (4000 and 1e5) is
+    # not an extrapolation — and neither is the flagship water case, whose
+    # Re_D lands at 1e5 + 1e-11 of floating-point dust: the evidence stays
+    # quiet about validity in all three.
+    at_lower_edge = wallspacing.estimate_wall_spacing(
+        velocity=4000.0, characteristic_length=1.0,
+        kinematic_viscosity=1.0, target_y_plus=30.0,
+        flow_type="internal")                       # Re_D = 4000.0 exactly
+    at_upper_edge = wallspacing.estimate_wall_spacing(
+        velocity=100000.0, characteristic_length=1.0,
+        kinematic_viscosity=1.0, target_y_plus=30.0,
+        flow_type="internal")                       # Re_D = 1e5 exactly
+    for estimate in (at_lower_edge, at_upper_edge, _internal_turbulent()):
+        assert "extrapolation" not in "\n".join(estimate.evidence)
 
 
 def test_blasius_pipe_extrapolation_is_named_in_evidence():
