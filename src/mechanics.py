@@ -18,12 +18,14 @@ a stdio MCP server (stdout is the protocol channel).
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
 import signal
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -517,6 +519,42 @@ def _parsed_result(case_dir: str) -> str:
         return "diverged"
 
 
+def _stamp_running(runs_root: str, case_dir: str) -> Optional[ledger.Row]:
+    """The run-start stamp shared by blocking and background runs: flip the
+    case's row to running (Result back to pending) with the best-effort
+    Solver/Mesh inspection. Returns None for out-of-tree case dirs."""
+    return ledger.track_running(runs_root, case_dir,
+                                solver=_inspect_solver(case_dir),
+                                mesh=_inspect_mesh(case_dir))
+
+
+def _run_output_files(case_dir: str) -> Tuple[str, str]:
+    """The Allrun stdout/stderr capture files, shared by both run modes."""
+    return os.path.join(case_dir, "Allrun.out"), os.path.join(case_dir, "Allrun.err")
+
+
+def _sweep_run_artifacts(case_dir: str) -> None:
+    """The clean-rerun sweep shared by blocking and background runs:
+    previous logs, the Allrun output captures and old time-step folders."""
+    out_file, err_file = _run_output_files(case_dir)
+    remove_files(case_dir, prefix="log")
+    remove_file(err_file)
+    remove_file(out_file)
+    remove_numeric_folders(case_dir)
+
+
+def _finish_run(runs_root: str, case_dir: str, error_logs: List[dict]) -> List[dict]:
+    """The one completion path every run takes (blocking, background and the
+    lazy background heal): the check_foam_errors output gates the row to done
+    with the parser-backed Result (#40), or to debugging with Result pending.
+    Returns error_logs unchanged so callers can hand them straight back."""
+    if not error_logs:
+        ledger.track_done(runs_root, case_dir, _parsed_result(case_dir))
+    else:
+        ledger.track_failed(runs_root, case_dir)
+    return error_logs
+
+
 def run_allrun_and_collect_errors(
     case_dir: str,
     timeout: int = 3600,
@@ -530,43 +568,45 @@ def run_allrun_and_collect_errors(
     from the convergence parser's verdict (#40) on success, or debugging
     (Result pending) on failure. A missing Allrun script never started a
     run, so the row is left untouched.
+
+    Guard (spec #72): a case with a LIVE background run (start_case) refuses
+    with a typed :class:`BackgroundRunError` — never two solvers against one
+    case directory. Everything else about the blocking contract is unchanged.
     """
+    live = _live_background_run(case_dir)
+    if live is not None:
+        live_run_id, live_pid = live
+        raise BackgroundRunError(
+            f"Case already has a live background run "
+            f"(run id {live_run_id or 'unknown'}, pid {live_pid}): poll "
+            f"case_status until it finishes, or stop it, before run_case."
+        )
+
     allrun_file_path = os.path.join(case_dir, "Allrun")
     if not os.path.exists(allrun_file_path):
         return [{"file": "Allrun", "error_content": f"Allrun script not found at {allrun_file_path}"}]
 
     runs_root = _runs_root(run_directory)
-    ledger.track_running(runs_root, case_dir,
-                         solver=_inspect_solver(case_dir), mesh=_inspect_mesh(case_dir))
+    _stamp_running(runs_root, case_dir)
 
-    out_file = os.path.join(case_dir, "Allrun.out")
-    err_file = os.path.join(case_dir, "Allrun.err")
+    out_file, err_file = _run_output_files(case_dir)
+    _sweep_run_artifacts(case_dir)
 
-    remove_files(case_dir, prefix="log")
-    remove_file(err_file)
-    remove_file(out_file)
-    remove_numeric_folders(case_dir)
-
-    last_error_logs = []
+    last_error_logs: List[dict] = []
     for attempt in range(1, max_retries + 1):
         _log(f"Running Allrun (attempt {attempt}/{max_retries})")
         run_command(allrun_file_path, out_file, err_file, case_dir, timeout)
 
         error_logs = check_foam_errors(case_dir)
         if len(error_logs) == 0:
-            ledger.track_done(runs_root, case_dir, _parsed_result(case_dir))
-            return []
+            return _finish_run(runs_root, case_dir, [])
 
         last_error_logs = error_logs
         if attempt < max_retries:
             _log("Allrun reported errors; retrying after cleanup...")
-            remove_files(case_dir, prefix="log")
-            remove_file(err_file)
-            remove_file(out_file)
-            remove_numeric_folders(case_dir)
+            _sweep_run_artifacts(case_dir)
 
-    ledger.track_failed(runs_root, case_dir)
-    return last_error_logs
+    return _finish_run(runs_root, case_dir, last_error_logs)
 
 
 # ============================================================================
@@ -963,3 +1003,312 @@ def _stamp_slurm_outcome(job_id: str, status: str) -> None:
     else:
         return  # still queued/running — nothing to stamp
     _SLURM_JOBS.pop(job_id, None)
+
+
+# ============================================================================
+# Background (detached) runs: start_case / case_status (issue #74)
+#
+# Mirrors the SLURM pair's shape: an in-memory registry plus lazy outcome
+# stamping at the status poll. The registry is a CACHE — the pidfile in the
+# case directory plus the ledger are the truth, so a server restart mid-run
+# reconciles through them.
+# ============================================================================
+
+PIDFILE_BASENAME = "Allrun.pid"
+
+
+class BackgroundRunError(RuntimeError):
+    """A background run could not be started or resolved: missing Allrun,
+    a case that already has a live run, an out-of-tree case directory, or
+    an unknown run id."""
+
+
+@dataclass
+class BackgroundRunStart:
+    """Typed outcome of one start_case call."""
+    run_id: str        # the LEDGER run id (zero-padded, e.g. '0005')
+    case: str          # case key (case dir relative to the runs root)
+    case_dir: str      # absolute case directory
+    pid: int           # pid of the detached Allrun process
+    status: str        # ledger Status after the start ('running')
+    solver: str        # Solver stamped on the row ('-' when unreadable)
+    mesh: str          # Mesh stamped on the row ('-' when unreadable)
+
+
+@dataclass
+class BackgroundRunStatus:
+    """Typed outcome of one case_status poll."""
+    run_id: str
+    case: str
+    status: str                        # ledger Status after this poll
+    result: str                        # ledger Result after this poll
+    pid: Optional[int]                 # pid while running, None otherwise
+    elapsed_seconds: Optional[float]   # wall seconds since start, while running
+    progress: Optional[object]         # convergence.SolverLogAnalysis mid-run
+    errors: List[dict]                 # extracted errors when this poll gated to debugging
+
+
+@dataclass
+class _BackgroundRun:
+    """Registry entry for a run this server process launched."""
+    case_dir: str
+    runs_root: str
+    process: subprocess.Popen
+    started: float
+
+
+# Runs whose Popen handle this server owns, keyed by the LEDGER run id.
+_BACKGROUND_RUNS: Dict[str, _BackgroundRun] = {}
+
+
+def _pid_alive(pid: Optional[int]) -> bool:
+    """True when a process with this pid is currently alive.
+
+    POSIX (the server's runtime): signal 0 probes without touching the
+    process; our own unreaped child is reaped first (waitpid WNOHANG) so an
+    exited-but-unreaped child reads as dead. Windows (test platform only):
+    os.kill(pid, 0) would TERMINATE the process there, so liveness comes
+    from OpenProcess + GetExitCodeProcess instead.
+    """
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    if os.name == "nt":
+        import ctypes
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        STILL_ACTIVE = 259
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            return False
+        try:
+            code = ctypes.c_ulong()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return False
+            return code.value == STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
+    try:
+        os.waitpid(pid, os.WNOHANG)  # reap our own zombie child, if it is one
+    except (ChildProcessError, OSError):
+        pass
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # alive, owned by someone else
+    return True
+
+
+def _pidfile_path(case_dir: str) -> str:
+    return os.path.join(case_dir, PIDFILE_BASENAME)
+
+
+def _write_pidfile(case_dir: str, run_id: str, pid: int, started: float) -> None:
+    """Record the detached run in the case directory — the recovery truth."""
+    pgid = None
+    if hasattr(os, "getpgid"):
+        try:
+            pgid = os.getpgid(pid)
+        except OSError:
+            pgid = None  # the child is already gone; liveness will say so
+    payload = {"run_id": run_id, "pid": pid, "pgid": pgid, "started": started}
+    with open(_pidfile_path(case_dir), "w", encoding="utf-8") as fh:
+        json.dump(payload, fh)
+
+
+def _read_pidfile(case_dir: str) -> Optional[dict]:
+    """The pidfile's payload, or None when absent/unreadable (never raises)."""
+    path = _pidfile_path(case_dir)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("pid"), int):
+        return None
+    return data
+
+
+def _live_background_run(case_dir: str) -> Optional[Tuple[Optional[str], int]]:
+    """(run_id, pid) of the case's live background run, or None.
+
+    Registry first (the cheap cache), then the pidfile (the truth a server
+    restart leaves behind). A dead pid never counts as live, so a stale
+    pidfile or a row stuck 'running' never blocks a new run.
+    """
+    case_dir = os.path.abspath(case_dir)
+    for run_id, run in _BACKGROUND_RUNS.items():
+        if os.path.abspath(run.case_dir) == case_dir and run.process.poll() is None:
+            return run_id, run.process.pid
+    info = _read_pidfile(case_dir)
+    if info is not None and _pid_alive(info["pid"]):
+        return info.get("run_id"), info["pid"]
+    return None
+
+
+def _allrun_argv(case_dir: str) -> List[str]:
+    """The detached counterpart of run_command's invocation: the case's
+    Allrun inside the sourced OpenFOAM environment. Tests substitute this
+    seam with a test-controlled child process."""
+    allrun = os.path.abspath(os.path.join(case_dir, "Allrun"))
+    os.chmod(allrun, 0o777)
+    return ["bash", "-c", f"source {_openfoam_bashrc()} && bash {allrun}"]
+
+
+def start_case(case_dir: str, run_directory: Optional[str] = None) -> BackgroundRunStart:
+    """Start the case's Allrun detached; return its ledger run id immediately.
+
+    Performs exactly the blocking run's preparation and ledger side effects —
+    the running stamp with the inspected solver/mesh, then the clean-rerun
+    sweep — and launches Allrun in its own session/process group with
+    stdout/stderr captured to Allrun.out/Allrun.err, the same files run_case
+    writes. A pidfile (Allrun.pid: run id, pid, process group, start time)
+    lands in the case directory and the run is registered in-memory keyed by
+    the ledger run id; poll case_status with that id to observe progress and
+    have the outcome stamped. No watchdog and no timeout: the case's own
+    endTime bounds the run.
+
+    Typed errors (:class:`BackgroundRunError`): missing Allrun; a case that
+    already has a live run (live registry entry, live pidfile process, or a
+    'running' row with a live pid); a case directory outside the runs root
+    (no ledger row means no run id to hand back).
+    """
+    case_dir = os.path.abspath(case_dir)
+    allrun_file_path = os.path.join(case_dir, "Allrun")
+    if not os.path.exists(allrun_file_path):
+        raise BackgroundRunError(f"Allrun script not found at {allrun_file_path}")
+
+    live = _live_background_run(case_dir)
+    if live is not None:
+        live_run_id, live_pid = live
+        raise BackgroundRunError(
+            f"Case already has a live background run "
+            f"(run id {live_run_id or 'unknown'}, pid {live_pid}): poll "
+            f"case_status until it finishes before starting another."
+        )
+
+    runs_root = _runs_root(run_directory)
+    row = _stamp_running(runs_root, case_dir)
+    if row is None:
+        raise BackgroundRunError(
+            f"Case directory {case_dir} is outside the runs root ({runs_root}): "
+            "background runs are keyed by their ledger run id, so the case "
+            "must live under the runs directory."
+        )
+
+    _sweep_run_artifacts(case_dir)
+
+    out_file, err_file = _run_output_files(case_dir)
+    started = time.time()
+    with open(out_file, "w") as out, open(err_file, "w") as err:
+        process = subprocess.Popen(
+            _allrun_argv(case_dir),
+            cwd=case_dir,
+            stdout=out,
+            stderr=err,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,  # its own session/process group (POSIX; ignored on Windows)
+        )
+    _write_pidfile(case_dir, row.id, process.pid, started)
+    _BACKGROUND_RUNS[row.id] = _BackgroundRun(
+        case_dir=case_dir, runs_root=runs_root, process=process, started=started)
+    _log(f"Started background Allrun for {case_dir} (run {row.id}, pid {process.pid})")
+    return BackgroundRunStart(run_id=row.id, case=row.case, case_dir=case_dir,
+                              pid=process.pid, status=row.status,
+                              solver=row.solver, mesh=row.mesh)
+
+
+def _in_flight_progress(case_dir: str):
+    """Typed progress on the partial solver log, or None before it exists.
+
+    parse_solver_log handles partial logs by design (verdict 'incomplete'
+    mid-run); early in a run the solver log may not exist yet, and a case
+    without a readable controlDict application entry cannot name its log —
+    both simply mean 'no progress to report yet'.
+    """
+    # Lazy import: convergence imports mechanics at module top (same
+    # precedent as _parsed_result).
+    import convergence
+    try:
+        return convergence.parse_solver_log(case_dir)
+    except (OSError, ValueError):
+        return None
+
+
+def _finish_background_run(run_id: str, runs_root: str, case_dir: str) -> List[dict]:
+    """Stamp an exited background run through the shared completion path,
+    then deregister it and drop its pidfile (a dead pid is stale truth)."""
+    errors = _finish_run(runs_root, case_dir, check_foam_errors(case_dir))
+    _BACKGROUND_RUNS.pop(run_id, None)
+    remove_file(_pidfile_path(case_dir))
+    return errors
+
+
+def _running_status(run_id: str, row: ledger.Row, case_dir: str,
+                    pid: int, elapsed: Optional[float]) -> BackgroundRunStatus:
+    return BackgroundRunStatus(run_id=run_id, case=row.case, status=row.status,
+                               result=row.result, pid=pid,
+                               elapsed_seconds=elapsed,
+                               progress=_in_flight_progress(case_dir), errors=[])
+
+
+def _final_status(run_id: str, runs_root: str, errors: List[dict]) -> BackgroundRunStatus:
+    row = next(r for r in ledger.read_rows(runs_root) if r.id == run_id)
+    return BackgroundRunStatus(run_id=run_id, case=row.case, status=row.status,
+                               result=row.result, pid=None, elapsed_seconds=None,
+                               progress=None, errors=errors)
+
+
+def case_status(run_id: str, run_directory: Optional[str] = None) -> BackgroundRunStatus:
+    """Poll a background run by its ledger run id.
+
+    Process alive -> status 'running' plus typed in-flight progress: the
+    convergence parser on the partial solver log (verdict 'incomplete' by
+    construction mid-run) and elapsed wall seconds. Process exited -> the
+    IDENTICAL completion path the blocking run takes (check_foam_errors
+    gates to done with the parser-backed Result, or to debugging with the
+    extracted errors), then the run is deregistered and the final ledger
+    state returned. A registry miss (server restarted mid-run) reconciles
+    through the pidfile: live pid -> running; dead pid with a row stuck
+    'running' -> stamped lazily through the same completion path. The
+    registry is a cache; the pidfile plus the ledger are the truth.
+
+    Typed error (:class:`BackgroundRunError`): unknown run id (no row).
+    """
+    runs_root = _runs_root(run_directory)
+    key = run_id.strip()
+    if key.isdigit():
+        key = f"{int(key):04d}"  # same normalization as ledger.set_note
+    row = next((r for r in ledger.read_rows(runs_root) if r.id == key), None)
+    if row is None:
+        raise BackgroundRunError(
+            f"No ledger row with ID '{key}' in "
+            f"{os.path.join(runs_root, ledger.LEDGER_BASENAME)}")
+    case_dir = os.path.abspath(os.path.join(runs_root, row.case))
+
+    run = _BACKGROUND_RUNS.get(key)
+    if run is not None:
+        if run.process.poll() is None:
+            return _running_status(key, row, run.case_dir, run.process.pid,
+                                   time.time() - run.started)
+        errors = _finish_background_run(key, run.runs_root, run.case_dir)
+        return _final_status(key, run.runs_root, errors)
+
+    info = _read_pidfile(case_dir)
+    if info is not None and _pid_alive(info["pid"]):
+        started = info.get("started")
+        elapsed = time.time() - started if isinstance(started, (int, float)) else None
+        return _running_status(key, row, case_dir, info["pid"], elapsed)
+
+    if row.status == "running":
+        # A row stuck running with no live process (server restarted mid-run,
+        # or the run exited unpolled): heal through the same completion path.
+        errors = _finish_background_run(key, runs_root, case_dir)
+        return _final_status(key, runs_root, errors)
+
+    return BackgroundRunStatus(run_id=key, case=row.case, status=row.status,
+                               result=row.result, pid=None, elapsed_seconds=None,
+                               progress=None, errors=[])
