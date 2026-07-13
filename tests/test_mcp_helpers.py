@@ -423,12 +423,12 @@ def test_estimate_wall_spacing_surfaces_the_typed_error():
 # estimate_turbulence_inlet (#68): inlet k/epsilon/omega, callable via MCP
 # ---------------------------------------------------------------------------
 
-def test_estimate_turbulence_inlet_is_registered_as_tool_twenty_three():
+def test_estimate_turbulence_inlet_is_registered():
     import asyncio
 
     names = {t.name for t in asyncio.run(fs.mcp.list_tools())}
     assert "estimate_turbulence_inlet" in names
-    assert len(names) == 23  # the two calculators join the 21 existing tools
+    # The tool count is pinned by the newest tool's registration test below.
 
 
 def test_estimate_turbulence_inlet_returns_the_typed_estimate():
@@ -458,3 +458,147 @@ def test_estimate_turbulence_inlet_surfaces_the_typed_error():
     with pytest.raises(turbinlet.TurbulenceInletError, match="exactly one"):
         asyncio.run(fn(velocity=10.0, intensity=None, length_scale=None,
                        hydraulic_diameter=None, kinematic_viscosity=None))
+
+
+# ---------------------------------------------------------------------------
+# start_case / case_status (#74): the background run loop, callable via MCP
+# ---------------------------------------------------------------------------
+
+CONTROL_DICT = """FoamFile
+{
+    format      ascii;
+    class       dictionary;
+    object      controlDict;
+}
+
+application     icoFoam;
+endTime         0.5;
+"""
+
+GOOD_LOG = (
+    "sigFpe : Enabling floating point exception trapping (FOAM_SIGFPE).\n"
+    "Time = 0.5s\n\n"
+    "Courant Number mean: 0.222158 max: 0.852134\n"
+    "smoothSolver:  Solving for Ux, Initial residual = 2.3091e-07, "
+    "Final residual = 2.3091e-07, No Iterations 0\n"
+    "End\n"
+)
+
+
+@pytest.fixture
+def background_case(tmp_path, monkeypatch):
+    """A ledgered temp case with the Allrun seam replaced by a cued child
+    process (the mechanics-seam prior art: tests/test_background_run.py)."""
+    monkeypatch.setattr(fs.mechanics, "RUNS_DIR", tmp_path)
+    monkeypatch.setattr(fs.mechanics, "_BACKGROUND_RUNS", {}, raising=False)
+    case_dir = fs.mechanics.resolve_case_dir("cavity")
+    (Path(case_dir) / "system").mkdir(parents=True)
+    (Path(case_dir) / "system" / "controlDict").write_text(CONTROL_DICT)
+    (Path(case_dir) / "Allrun").write_text("#!/bin/sh\nrunApplication icoFoam\n")
+
+    script = tmp_path / "fake_allrun.py"
+    script.write_text(
+        "import os, time\n"
+        f"with open('log.icoFoam', 'w') as fh:\n"
+        f"    fh.write({GOOD_LOG!r})\n"
+        "deadline = time.time() + 30\n"
+        "while time.time() < deadline and not os.path.exists('exit.cue'):\n"
+        "    time.sleep(0.05)\n"
+    )
+    monkeypatch.setattr(fs.mechanics, "_allrun_argv",
+                        lambda case_dir: [sys.executable, str(script)])
+    yield case_dir
+    (Path(case_dir) / "exit.cue").write_text("")
+    for run in list(fs.mechanics._BACKGROUND_RUNS.values()):
+        if run.process.poll() is None:
+            run.process.kill()
+            run.process.wait(timeout=10)
+
+
+def test_start_case_is_registered():
+    import asyncio
+
+    names = {t.name for t in asyncio.run(fs.mcp.list_tools())}
+    assert "start_case" in names
+    # The tool count is pinned by the newest tool's registration test below.
+
+
+def test_case_status_is_registered_as_tool_twenty_five():
+    import asyncio
+
+    names = {t.name for t in asyncio.run(fs.mcp.list_tools())}
+    assert "case_status" in names
+    assert len(names) == 25  # the background run pair joins the 23 existing tools
+
+
+def test_start_case_then_case_status_returns_the_typed_lifecycle(background_case):
+    import asyncio
+    import time
+
+    start_fn = getattr(fs.start_case, "fn", fs.start_case)
+    start = asyncio.run(start_fn(case_dir=background_case))
+
+    assert start.run_id == "0001"
+    assert start.status == "running"
+    assert start.pid > 0
+
+    status_fn = getattr(fs.case_status, "fn", fs.case_status)
+    running = asyncio.run(status_fn(run_id=start.run_id))
+    assert running.status == "running"
+    assert running.elapsed_seconds >= 0
+
+    (Path(background_case) / "exit.cue").write_text("")
+    deadline = time.time() + 20
+    final = running
+    while time.time() < deadline and final.status == "running":
+        final = asyncio.run(status_fn(run_id=start.run_id))
+        time.sleep(0.05)
+
+    assert final.status == "done"
+    assert final.result == "converged"
+    assert final.errors == []
+
+
+def test_case_status_mid_run_progress_is_the_solver_log_response(background_case):
+    import asyncio
+    import time
+
+    start_fn = getattr(fs.start_case, "fn", fs.start_case)
+    start = asyncio.run(start_fn(case_dir=background_case))
+
+    status_fn = getattr(fs.case_status, "fn", fs.case_status)
+    deadline = time.time() + 20
+    status = asyncio.run(status_fn(run_id=start.run_id))
+    while time.time() < deadline and status.progress is None:
+        status = asyncio.run(status_fn(run_id=start.run_id))
+        time.sleep(0.05)
+
+    # The progress payload is the same typed model parse_solver_log returns.
+    assert isinstance(status.progress, fs.SolverLogResponse)
+    assert status.progress.time.latest_time == pytest.approx(0.5)
+
+
+def test_start_case_surfaces_the_typed_error(tmp_path, monkeypatch):
+    import asyncio
+
+    import mechanics
+
+    monkeypatch.setattr(fs.mechanics, "RUNS_DIR", tmp_path)
+    case_dir = tmp_path / "bare"
+    case_dir.mkdir()
+
+    fn = getattr(fs.start_case, "fn", fs.start_case)
+    with pytest.raises(mechanics.BackgroundRunError, match="Allrun"):
+        asyncio.run(fn(case_dir=str(case_dir)))
+
+
+def test_case_status_surfaces_the_typed_error(tmp_path, monkeypatch):
+    import asyncio
+
+    import mechanics
+
+    monkeypatch.setattr(fs.mechanics, "RUNS_DIR", tmp_path)
+
+    fn = getattr(fs.case_status, "fn", fs.case_status)
+    with pytest.raises(mechanics.BackgroundRunError, match="0042"):
+        asyncio.run(fn(run_id="0042"))

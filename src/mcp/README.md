@@ -65,6 +65,8 @@ Switch the config files above to stdio (`"command": "foamagent-mcp"`) if you pre
 | `resolve_case_dir` | Where a new case should live (under `runs/`) |
 | `write_case_file` / `read_case_file` / `list_case_files` | Case file I/O on the server's filesystem |
 | `run_case` | Execute Allrun, extract errors from logs |
+| `start_case` | Start Allrun detached and return the case's ledger run id immediately — identical clean-rerun sweep and ledger stamping as `run_case`, for runs long enough to outlive a blocking call (transient, fine-mesh, parallel); pidfile in the case directory, no watchdog |
+| `case_status` | Poll a background run by run id: typed convergence-parser progress on the partial log (latest time, residuals, Courant, verdict-so-far) plus elapsed wall time while it lives; the poll that observes the exit stamps the row through the identical completion path a blocking run takes (done with parser-backed Result, or debugging with extracted errors), and a stale `running` row heals on the next poll |
 | `run_openfoam_command` | One-off utilities: `checkMesh`, `gmshToFoam`, `decomposePar`, ... |
 | `run_python_script` | Server-side Python (PyVista rendering, GMSH mesh generation) |
 | `ensure_foam_file` | `.foam` marker for the PyVista OpenFOAM reader |
