@@ -1352,6 +1352,22 @@ def _final_status(run_id: str, runs_root: str, errors: List[dict]) -> Background
                                progress=None, errors=errors)
 
 
+def _resolve_run_row(runs_root: str, run_id: str) -> Tuple[str, ledger.Row]:
+    """(normalized key, row) for a run id, shared by case_status/stop_case.
+
+    Typed error (:class:`BackgroundRunError`): unknown run id (no row).
+    """
+    key = run_id.strip()
+    if key.isdigit():
+        key = f"{int(key):04d}"  # same normalization as ledger.set_note
+    row = next((r for r in ledger.read_rows(runs_root) if r.id == key), None)
+    if row is None:
+        raise BackgroundRunError(
+            f"No ledger row with ID '{key}' in "
+            f"{os.path.join(runs_root, ledger.LEDGER_BASENAME)}")
+    return key, row
+
+
 def case_status(run_id: str, run_directory: Optional[str] = None) -> BackgroundRunStatus:
     """Poll a background run by its ledger run id.
 
@@ -1369,14 +1385,7 @@ def case_status(run_id: str, run_directory: Optional[str] = None) -> BackgroundR
     Typed error (:class:`BackgroundRunError`): unknown run id (no row).
     """
     runs_root = _runs_root(run_directory)
-    key = run_id.strip()
-    if key.isdigit():
-        key = f"{int(key):04d}"  # same normalization as ledger.set_note
-    row = next((r for r in ledger.read_rows(runs_root) if r.id == key), None)
-    if row is None:
-        raise BackgroundRunError(
-            f"No ledger row with ID '{key}' in "
-            f"{os.path.join(runs_root, ledger.LEDGER_BASENAME)}")
+    key, row = _resolve_run_row(runs_root, run_id)
     case_dir = os.path.abspath(os.path.join(runs_root, row.case))
 
     run = _BACKGROUND_RUNS.get(key)
@@ -1402,3 +1411,282 @@ def case_status(run_id: str, run_directory: Optional[str] = None) -> BackgroundR
     return BackgroundRunStatus(run_id=key, case=row.case, status=row.status,
                                result=row.result, pid=None, elapsed_seconds=None,
                                progress=None, errors=[])
+
+
+# ----------------------------------------------------------------------------
+# stop_case (issue #75): graceful-first stop, evidence kept.
+#
+# Every number below is a live-harvested v10 fact (issue #73), not folklore:
+# the graceful route needs runTimeModifiable true (compiled default FALSE,
+# Time.C:363); the stopAt-writeNow edit stays invisible until the dict's
+# mtime clears fileModificationSkew (10 s default) past the solver's last
+# read (fileMonitor.C:411) — a future-stamped touch opens the gate at once;
+# a group SIGTERM takes the whole detached tree out in <1 s but SIGTERM is
+# never graceful (writeNow signals compiled off, exit 143, no fields); and a
+# leftover stopAt writeNow insta-stops any rerun after one iteration.
+# ----------------------------------------------------------------------------
+
+_STOP_POLL_SECONDS = 0.05          # process poll cadence inside the stop loops
+_STOP_TOUCH_INTERVAL_SECONDS = 2.0  # re-touch cadence while waiting (harvest #73)
+_MTIME_GATE_MARGIN_SECONDS = 30.0  # comfortably past the 10 s skew default
+_KILL_ESCALATION_SECONDS = 5.0     # per-rung wait before/after SIGKILL
+
+# OpenFOAM Switch spellings that read as true (Switch.C word variants).
+_TRUE_SWITCH = frozenset({"true", "on", "yes", "y", "t", "1"})
+
+
+@dataclass
+class BackgroundRunStop:
+    """Typed outcome of one stop_case call."""
+    run_id: str
+    case: str
+    status: str          # ledger Status after the stop ('done'/'debugging')
+    result: str          # ledger Result after the stop (parser-backed)
+    method: str          # 'graceful' | 'killed' | 'already_exited'
+    note: Optional[str]  # the deliberate-stop note recorded on the row
+    #                      (None when the run had already exited on its own)
+    errors: List[dict]   # extracted errors when the gate landed on debugging
+
+
+def _control_dict_path(case_dir: str) -> str:
+    return os.path.join(case_dir, "system", "controlDict")
+
+
+def _run_time_modifiable(case_dir: str) -> bool:
+    """True when the case's controlDict enables runtime dict re-reads.
+
+    v10's COMPILED default is false (harvest #73: Time.C:363, verified live
+    — 35 s of edits ignored without the entry), so an absent entry means the
+    writeNow route can never be seen and the stop goes straight to the kill
+    ladder. Tutorials often ship 'true' explicitly, masking the default.
+    """
+    try:
+        with open(_control_dict_path(case_dir), encoding="utf-8",
+                  errors="replace") as fh:
+            text = fh.read()
+    except OSError:
+        return False
+    match = re.search(r"^\s*runTimeModifiable\s+(\w+)\s*;", text, re.MULTILINE)
+    return match is not None and match.group(1).lower() in _TRUE_SWITCH
+
+
+def _set_control_dict_entry(path: str, key: str, value: str) -> None:
+    """Rewrite (or append) one top-level controlDict entry in place.
+
+    The sed-equivalent the harvest verified: the edit mechanism is
+    irrelevant (foamDictionary and sed both work) — only the mtime gate
+    decides whether the solver sees it.
+    """
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    pattern = re.compile(rf"^(\s*{key}\s+)[^;]*;", re.MULTILINE)
+    new_text, count = pattern.subn(rf"\g<1>{value};", text, count=1)
+    if count == 0:
+        new_text = text.rstrip("\n") + f"\n\n{key}         {value};\n"
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(new_text)
+
+
+def _touch_past_mtime_gate(path: str) -> None:
+    """Stamp the dict's mtime past v10's fileModificationSkew gate.
+
+    fileMonitor fires only when the file's mtime exceeds its
+    mtime-at-last-read by MORE than fileModificationSkew (10 s default), so
+    a single edit landing shortly after the solver last read the dict is
+    invisible FOREVER (harvest #73, observed twice). A future mtime
+    (now + margin > skew) opens the gate immediately.
+    """
+    future = time.time() + _MTIME_GATE_MARGIN_SECONDS
+    try:
+        os.utime(path, (future, future))
+    except OSError:
+        pass  # the dict may be mid-rewrite; the next touch retries
+
+
+def _stop_target_alive(process: Optional[subprocess.Popen],
+                       info: Optional[dict]) -> bool:
+    """Liveness for the run being stopped: our own Popen (poll() reaps) when
+    the registry has it, else the pidfile identity check."""
+    if process is not None:
+        return process.poll() is None
+    return info is not None and _pidfile_alive(info)
+
+
+def _graceful_stop(case_dir: str, process: Optional[subprocess.Popen],
+                   info: Optional[dict], grace_seconds: float) -> Tuple[bool, bool]:
+    """The harvest-pinned graceful recipe. Returns (attempted, exited).
+
+    Precondition gate first: without runTimeModifiable true the edit can
+    never be seen — not attempted, straight to the kill ladder. Otherwise:
+    write stopAt writeNow, then defeat the mtime-skew gate with a
+    future-stamped touch, re-stamped every ~2 s while polling the process
+    for the length of the grace window. On a graceful exit the solver exits
+    0 at the next time-step boundary, writes the current time directory and
+    the log ends 'End'.
+    """
+    if grace_seconds <= 0 or not _run_time_modifiable(case_dir):
+        return False, False
+    path = _control_dict_path(case_dir)
+    try:
+        _set_control_dict_entry(path, "stopAt", "writeNow")
+    except OSError:
+        return False, False
+    deadline = time.time() + grace_seconds
+    next_touch = 0.0
+    while True:
+        now = time.time()
+        if now >= next_touch:
+            _touch_past_mtime_gate(path)
+            next_touch = now + _STOP_TOUCH_INTERVAL_SECONDS
+        if not _stop_target_alive(process, info):
+            return True, True
+        if now >= deadline:
+            return True, False
+        time.sleep(min(_STOP_POLL_SECONDS, deadline - now))
+
+
+def _signal_stop_target(pid: int, pgid: Optional[int],
+                        process: Optional[subprocess.Popen], *, force: bool) -> None:
+    """One kill rung. POSIX: signal the whole process group (with
+    start_new_session the child's pid IS the pgid) — TERM first, KILL when
+    forced. Windows (test platform): TerminateProcess via the Popen handle
+    or os.kill; there is no group to address and no graceful signal anyway."""
+    if os.name == "nt":
+        try:
+            if process is not None:
+                process.kill()
+            else:
+                os.kill(pid, signal.SIGTERM)  # TerminateProcess on Windows
+        except OSError:
+            pass
+        return
+    sig = signal.SIGKILL if force else signal.SIGTERM
+    target_pgid = pgid if isinstance(pgid, int) and pgid > 0 else None
+    if target_pgid is None:
+        try:
+            target_pgid = os.getpgid(pid)
+        except OSError:
+            target_pgid = None
+    try:
+        if target_pgid is not None:
+            os.killpg(target_pgid, sig)
+        else:
+            os.kill(pid, sig)
+    except OSError:
+        pass  # already gone (ProcessLookupError) or not ours to signal
+
+
+def _kill_stop_target(pid: int, pgid: Optional[int],
+                      process: Optional[subprocess.Popen],
+                      info: Optional[dict]) -> bool:
+    """The kill ladder: group TERM, short wait, SIGKILL escalation.
+
+    Harvest #73: the group TERM took out every member in <1 s live; the
+    corpses may linger as zombies (PID-1 python never reaps orphans), which
+    the liveness check reads as dead via the /proc state letter. Returns
+    True when the run is down.
+    """
+    for force in (False, True):
+        _signal_stop_target(pid, pgid, process, force=force)
+        deadline = time.time() + _KILL_ESCALATION_SECONDS
+        while time.time() < deadline:
+            if not _stop_target_alive(process, info):
+                return True
+            time.sleep(_STOP_POLL_SECONDS)
+    return not _stop_target_alive(process, info)
+
+
+def _record_stop_note(runs_root: str, run_id: str, method: str) -> str:
+    """Record the deliberate stop through the ONE sanctioned note write
+    (ledger.set_note — the same call set_run_note makes), appending to any
+    existing note instead of clobbering it. The note is what keeps a stopped
+    run from reading like a crash next week."""
+    row = next(r for r in ledger.read_rows(runs_root) if r.id == run_id)
+    text = f"stopped deliberately via stop_case ({method})"
+    existing = row.notes.strip()
+    note = f"{existing}; {text}" if existing and existing != ledger.PLACEHOLDER else text
+    ledger.set_note(runs_root, run_id, note=note)
+    return note
+
+
+def _stopped_status(run_id: str, runs_root: str, *, method: str,
+                    note: Optional[str], errors: List[dict]) -> BackgroundRunStop:
+    row = next(r for r in ledger.read_rows(runs_root) if r.id == run_id)
+    return BackgroundRunStop(run_id=run_id, case=row.case, status=row.status,
+                             result=row.result, method=method, note=note,
+                             errors=errors)
+
+
+def stop_case(run_id: str, grace_seconds: float = 30.0,
+              run_directory: Optional[str] = None) -> BackgroundRunStop:
+    """Stop a background run — gracefully first, keeping the evidence.
+
+    Graceful (requires runTimeModifiable true in the case's controlDict —
+    v10's compiled default is false, so the precondition is read first and
+    the kill ladder is taken directly when it fails): stopAt writeNow is
+    written into system/controlDict and the dict's mtime is stamped past the
+    fileModificationSkew gate (re-stamped every ~2 s), letting the solver
+    finish the current time step, WRITE the current fields and exit 0 within
+    the bounded grace window. On timeout — or when graceful was impossible —
+    the whole process group is SIGTERMed with a SIGKILL escalation. Either
+    way stopAt is restored to endTime afterwards (a leftover writeNow makes
+    any rerun insta-stop after one iteration), the row is stamped through
+    the IDENTICAL completion path every run takes (check_foam_errors gate ->
+    done with the parser-backed Result, or debugging with extracted errors),
+    the run is deregistered, the pidfile dropped, and the deliberate stop is
+    recorded on the row via the sanctioned note write — no new ledger
+    states; a stopped run explains itself instead of reading like a crash.
+
+    Idempotence: a run that exited between the caller's last poll and this
+    call is stamped normally (method 'already_exited', no stop note) — not
+    an error. Typed errors (:class:`BackgroundRunError`): unknown run id; a
+    run that is not live and left nothing to stamp.
+    """
+    runs_root = _runs_root(run_directory)
+    key, row = _resolve_run_row(runs_root, run_id)
+    case_dir = os.path.abspath(os.path.join(runs_root, row.case))
+
+    run = _BACKGROUND_RUNS.get(key)
+    process = run.process if run is not None else None
+    if run is not None:
+        case_dir, runs_root = run.case_dir, run.runs_root
+    info = _read_pidfile(case_dir)
+
+    if not _stop_target_alive(process, info):
+        if run is None and info is None and row.status != "running":
+            raise BackgroundRunError(
+                f"Run {key} has no live background process to stop "
+                f"(status: {row.status}, result: {row.result}).")
+        # The run exited on its own between the caller's poll and this call
+        # (or the row is stuck 'running' after a server restart): stamp it
+        # normally through the completion path — nothing was stopped, so no
+        # deliberate-stop note.
+        errors = _finish_background_run(key, runs_root, case_dir)
+        return _stopped_status(key, runs_root, method="already_exited",
+                               note=None, errors=errors)
+
+    pid = process.pid if process is not None else info["pid"]
+    pgid = info.get("pgid") if info is not None else None
+
+    attempted, exited = _graceful_stop(case_dir, process, info, grace_seconds)
+    method = "graceful"
+    if not exited:
+        method = "killed"
+        exited = _kill_stop_target(pid, pgid, process, info)
+    if attempted:
+        # Restore AFTER the process is down, whichever rung stopped it.
+        try:
+            _set_control_dict_entry(_control_dict_path(case_dir),
+                                    "stopAt", "endTime")
+        except OSError:
+            _log(f"Could not restore 'stopAt endTime;' in {case_dir}")
+    if not exited:
+        raise BackgroundRunError(
+            f"Run {key} (pid {pid}) survived SIGTERM and SIGKILL; "
+            "row left running for a later poll.")
+
+    errors = _finish_background_run(key, runs_root, case_dir)
+    note = _record_stop_note(runs_root, key, method)
+    _log(f"Stopped background run {key} ({method}) in {case_dir}")
+    return _stopped_status(key, runs_root, method=method, note=note,
+                           errors=errors)

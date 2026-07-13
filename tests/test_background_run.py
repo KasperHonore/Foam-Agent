@@ -16,6 +16,7 @@ Key-free, no docker, no OpenFOAM, no real solver; runs on Windows and Linux.
 
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -574,3 +575,84 @@ def test_legacy_pidfile_without_starttime_keeps_working(tmp_path, fake_allrun,
     assert status.pid == start.pid
     _cue_exit(case_dir)
     process.wait(timeout=20)
+
+
+# ---------------------------------------------------------------------------
+# stop_case (#75): graceful-first stop, evidence kept.
+# The harvest-pinned recipe (#73): graceful requires runTimeModifiable true
+# (v10's compiled default is FALSE); the stopAt-writeNow edit is invisible
+# until the dict's mtime clears the fileModificationSkew gate (10 s default),
+# so the edit is followed by future-stamped touches; on timeout the whole
+# process group is killed; either way stopAt is restored to endTime (a
+# leftover writeNow insta-stops any rerun after one iteration).
+# ---------------------------------------------------------------------------
+
+def _make_graceful_case(runs_root) -> str:
+    """A case whose controlDict allows the graceful route (runTimeModifiable
+    true, an explicit stopAt entry for the in-place rewrite to hit)."""
+    case_dir = _make_case(runs_root)
+    control_dict = Path(case_dir) / "system" / "controlDict"
+    control_dict.write_text(control_dict.read_text()
+                            + "\nrunTimeModifiable true;\nstopAt          endTime;\n")
+    return case_dir
+
+
+@pytest.fixture
+def graceful_allrun(monkeypatch, tmp_path):
+    """A cooperative 'solver': writes its log on startup, then honors the
+    graceful cue — it exits as soon as system/controlDict says writeNow,
+    recording what it saw (the external evidence that the edit landed
+    before the restore)."""
+    def _install(log_content):
+        script = tmp_path / "graceful_allrun.py"
+        script.write_text(
+            "import os, time\n"
+            f"with open('log.icoFoam', 'w') as fh:\n"
+            f"    fh.write({log_content!r})\n"
+            "cd = os.path.join('system', 'controlDict')\n"
+            "deadline = time.time() + 30\n"
+            "while time.time() < deadline:\n"
+            "    try:\n"
+            "        with open(cd) as fh:\n"
+            "            text = fh.read()\n"
+            "    except OSError:\n"
+            "        text = ''\n"
+            "    if 'writeNow' in text:\n"
+            "        with open('graceful.observed', 'w') as fh:\n"
+            "            fh.write(text)\n"
+            "        break\n"
+            "    time.sleep(0.02)\n"
+        )
+        monkeypatch.setattr(mechanics, "_allrun_argv",
+                            lambda case_dir: [sys.executable, str(script)])
+
+    return _install
+
+
+def test_stop_case_graceful_stops_a_cooperative_run_and_keeps_evidence(
+        tmp_path, graceful_allrun):
+    case_dir = _make_graceful_case(tmp_path)
+    graceful_allrun(GOOD_LOG)
+    start = mechanics.start_case(case_dir, run_directory=str(tmp_path))
+    _wait_for_file(Path(case_dir) / "log.icoFoam")
+
+    stop = mechanics.stop_case(start.run_id, grace_seconds=15.0,
+                               run_directory=str(tmp_path))
+
+    assert stop.method == "graceful"
+    assert stop.status == "done"
+    assert stop.result == "converged"        # the parser-backed Result
+    assert stop.errors == []
+    # The solver really saw the writeNow edit (the graceful cue)...
+    observed = (Path(case_dir) / "graceful.observed").read_text()
+    assert "writeNow" in observed
+    # ...and the dict was restored afterwards: a rerun must not insta-stop.
+    restored = (Path(case_dir) / "system" / "controlDict").read_text()
+    assert "writeNow" not in restored
+    assert re.search(r"stopAt\s+endTime;", restored)
+    # Stamped through the same completion path; the note explains the row.
+    row = _row(tmp_path, "cavity")
+    assert (row["status"], row["result"]) == ("done", "converged")
+    assert "stopped deliberately via stop_case (graceful)" in row["notes"]
+    assert stop.note == "stopped deliberately via stop_case (graceful)"
+    assert not (Path(case_dir) / "Allrun.pid").exists()
