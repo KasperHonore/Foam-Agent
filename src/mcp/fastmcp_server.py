@@ -1,9 +1,10 @@
 """FastMCP-based OpenFOAM Agent Server (key-free).
 
 This server exposes ONLY mechanical capabilities: FAISS tutorial retrieval
-(local embeddings), case file I/O, OpenFOAM execution, log parsing, Python
-script execution (GMSH meshing / PyVista visualization) and SLURM job
-management. It requires NO LLM provider and NO API key.
+(local embeddings), case file I/O, OpenFOAM execution (blocking and detached
+background runs), log parsing, Python script execution (GMSH meshing /
+PyVista visualization) and SLURM job management. It requires NO LLM provider
+and NO API key.
 
 All CFD reasoning (planning a case, writing OpenFOAM dictionaries, diagnosing
 errors, generating mesh/visualization scripts) is done by the calling agent —

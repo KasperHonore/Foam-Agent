@@ -2,9 +2,10 @@
 """Mechanical (non-LLM) capabilities of Foam-Agent.
 
 Everything in this module runs WITHOUT any LLM provider or API key:
-file I/O, OpenFOAM execution, log parsing, FAISS tutorial retrieval
-(local HuggingFace embeddings by default), Python script execution
-(GMSH meshing / PyVista visualization) and SLURM job management.
+file I/O, OpenFOAM execution (blocking and detached background runs),
+log parsing, FAISS tutorial retrieval (local HuggingFace embeddings by
+default), Python script execution (GMSH meshing / PyVista visualization)
+and SLURM job management.
 
 The MCP server (src/mcp/fastmcp_server.py) exposes these functions as
 tools. The reasoning that used to be LLM calls inside this repo now
@@ -28,10 +29,13 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 import ledger
 from text_utils import tokenize
+
+if TYPE_CHECKING:  # runtime import would be a cycle (convergence imports mechanics)
+    import convergence
 
 SRC_DIR = Path(__file__).resolve().parent
 REPO_DIR = SRC_DIR.parent
@@ -1044,7 +1048,7 @@ class BackgroundRunStatus:
     result: str                        # ledger Result after this poll
     pid: Optional[int]                 # pid while running, None otherwise
     elapsed_seconds: Optional[float]   # wall seconds since start, while running
-    progress: Optional[object]         # convergence.SolverLogAnalysis mid-run
+    progress: Optional[convergence.SolverLogAnalysis]  # typed progress mid-run
     errors: List[dict]                 # extracted errors when this poll gated to debugging
 
 
@@ -1177,10 +1181,9 @@ def start_case(case_dir: str, run_directory: Optional[str] = None) -> Background
     (no ledger row means no run id to hand back).
     """
     case_dir = os.path.abspath(case_dir)
-    allrun_file_path = os.path.join(case_dir, "Allrun")
-    if not os.path.exists(allrun_file_path):
-        raise BackgroundRunError(f"Allrun script not found at {allrun_file_path}")
 
+    # Same guard order as run_allrun_and_collect_errors: the already-running
+    # refusal wins over every other error when both apply.
     live = _live_background_run(case_dir)
     if live is not None:
         live_run_id, live_pid = live
@@ -1189,6 +1192,10 @@ def start_case(case_dir: str, run_directory: Optional[str] = None) -> Background
             f"(run id {live_run_id or 'unknown'}, pid {live_pid}): poll "
             f"case_status until it finishes before starting another."
         )
+
+    allrun_file_path = os.path.join(case_dir, "Allrun")
+    if not os.path.exists(allrun_file_path):
+        raise BackgroundRunError(f"Allrun script not found at {allrun_file_path}")
 
     runs_root = _runs_root(run_directory)
     row = _stamp_running(runs_root, case_dir)

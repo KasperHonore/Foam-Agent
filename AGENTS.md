@@ -54,8 +54,9 @@ The simulation loop is driven by the agent harness following the `foam` skill: p
 ```
 agents/                # CANONICAL skills + subagents (the "brain-guidance")
 src/
-  mechanics.py         # key-free mechanical layer: file I/O, execution, log
-                       # parsing, lazy FAISS retrieval (local HF embeddings),
+  mechanics.py         # key-free mechanical layer: file I/O, execution
+                       # (blocking + detached background runs), log parsing,
+                       # lazy FAISS retrieval (local HF embeddings),
                        # Python script execution, SLURM
   ledger.py            # run ledger (runs/ledger.md): server-owned record of
                        # every run, written as run-lifecycle side effects
