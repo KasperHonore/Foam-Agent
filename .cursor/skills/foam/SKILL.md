@@ -141,12 +141,14 @@ never need restating.
   in Foundation v10 vocabulary (`surfaceFeatures`, not
   `surfaceFeatureExtract`); for ESI users nothing changes — detect, name it,
   and offer `translate_case_to_esi` at the end as usual (best-effort).
-- **Turbulent case, any mesh branch**: give foam-mesher the flow conditions
-  (velocity, characteristic length, kinematic viscosity) and the target y+
-  from step 1 — its wall/layer sizing consumes `estimate_wall_spacing` on
-  both the GMSH and snappy branches, bridged per
+- **Turbulent case, either foam-mesher branch (GMSH or STL)**: give
+  foam-mesher the flow conditions (velocity, characteristic length,
+  kinematic viscosity) and the target y+ from step 1 — its wall/layer
+  sizing consumes `estimate_wall_spacing` on both branches, bridged per
   [references/turbulence.md](references/turbulence.md); boundary-layer
-  knobs are computed, not eyeballed.
+  knobs are computed, not eyeballed. (A turbulent blockMesh case hits the
+  same absolute first-cell height via `simpleGrading` toward the wall when
+  you write `blockMeshDict` in step 3 — same reference.)
 - **blockMesh**: nothing to do here — `blockMeshDict` is generated in step 3
   and blockMesh runs inside Allrun.
 - **Validate the mesh** (any source): `assess_mesh(case_dir)` — typed census,
