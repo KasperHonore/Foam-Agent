@@ -29,6 +29,7 @@ import forcecoeffs
 import mechanics
 import meshcheck
 import stlcheck
+import turbinlet
 import wallspacing
 from translation.esi_translator import ESITranslator
 
@@ -85,6 +86,12 @@ velocity, the first-cell CENTRE distance and the first-cell HEIGHT as two
 separately labelled fields, a boundary-layer thickness estimate and a
 suggested layer count. Pure math, no case directory: never do this
 arithmetic from memory.
+
+For turbulent inlet conditions, estimate_turbulence_inlet turns velocity,
+intensity and a length scale (or hydraulic diameter) into k/epsilon/omega,
+each carrying the formula that produced it — pure server-side math, no case
+directory needed. Use it instead of recalling formulas: the constants are
+pinned server-side and every silent default is echoed in the output.
 
 The run ledger (runs/ledger.md) tracks every run automatically as a side
 effect of the tools above. set_run_note is the ONLY sanctioned skill-side
@@ -798,6 +805,66 @@ async def estimate_wall_spacing(
         expansion_ratio=expansion_ratio,
     )
     return WallSpacingResponse(**dataclasses.asdict(estimate))
+
+
+# ============================================================================
+# Inlet turbulence calculator (pure math, deterministic, key-free)
+# ============================================================================
+
+class InletQuantityModel(BaseModel):
+    value: float = Field(description="The computed value")
+    units: str = Field(description="SI units of the value ('-' for dimensionless)")
+    formula: str = Field(description="The formula that produced the value, with the pinned model constant echoed where it enters")
+
+
+class TurbulenceInletResponse(BaseModel):
+    velocity: float = Field(description="Mean inlet velocity U [m/s] the estimate was computed for (echoed input)")
+    intensity: float = Field(description="Turbulence intensity I as applied (fraction: 0.05 = 5%)")
+    intensity_source: str = Field(description="'caller-supplied', or the documented medium default named as an applied assumption")
+    length_scale: float = Field(description="Turbulence length scale l [m] as applied")
+    length_scale_source: str = Field(description="'caller-supplied', or the named l = 0.07*D_h conversion from the given hydraulic diameter")
+    c_mu: float = Field(description="The model constant C_mu, pinned server-side (the turbulence reference cites this tool as the constants' source)")
+    k: InletQuantityModel = Field(description="Turbulence kinetic energy [m^2/s^2]")
+    epsilon: InletQuantityModel = Field(description="Turbulence dissipation rate [m^2/s^3]")
+    omega: InletQuantityModel = Field(description="Specific dissipation rate [1/s]")
+    nu_t: InletQuantityModel = Field(description="Turbulent (eddy) viscosity [m^2/s]")
+    viscosity_ratio: Optional[InletQuantityModel] = Field(description="The nu_t/nu sanity figure — included only when kinematic_viscosity is supplied (a healthy RAS inlet sits well under ~1000; None when nu was not given)")
+    assumptions: List[str] = Field(description="Every applied default or conversion, stated — silence never hides an assumption")
+
+
+@mcp.tool(name="estimate_turbulence_inlet")
+async def estimate_turbulence_inlet(
+    velocity: float = Field(description="Mean inlet velocity magnitude U [m/s], > 0"),
+    intensity: Optional[float] = Field(default=None, description="Turbulence intensity I as a fraction (0.05 = 5%); omitted, the documented medium default 0.05 is applied and echoed in the output"),
+    length_scale: Optional[float] = Field(default=None, description="Turbulence length scale l [m]; give exactly ONE of length_scale / hydraulic_diameter"),
+    hydraulic_diameter: Optional[float] = Field(default=None, description="Hydraulic diameter D_h [m]; converted via the standard l = 0.07*D_h rule, named in the output"),
+    kinematic_viscosity: Optional[float] = Field(default=None, description="Optional kinematic viscosity nu [m^2/s]; when given, the turbulent-viscosity ratio nu_t/nu is included as the sanity figure"),
+    ctx: Context = None,
+) -> TurbulenceInletResponse:
+    """Compute inlet turbulence quantities k, epsilon and omega from velocity,
+    intensity and a length scale — computed, never recalled.
+
+    Pure server-side math (no case directory, no filesystem): k =
+    3/2*(U*I)^2, epsilon = C_mu^(3/4)*k^(3/2)/l, omega =
+    sqrt(k)/(C_mu^(1/4)*l), nu_t = C_mu*k^2/epsilon — each result carries
+    the formula that produced it, with the pinned constant (C_mu = 0.09)
+    echoed where it enters. An omitted intensity applies the documented
+    medium default (0.05) and states it; a hydraulic diameter converts via
+    the named l = 0.07*D_h rule. Supply kinematic_viscosity to get the
+    nu_t/nu ratio as the sanity figure for spotting pathological
+    combinations. Exactly one of length_scale / hydraulic_diameter is
+    required (neither or both is a typed error), and non-physical inputs
+    (non-positive or non-finite) raise typed errors — never plausible
+    garbage numbers.
+    """
+    estimate = turbinlet.estimate_turbulence_inlet(
+        velocity=velocity,
+        intensity=intensity,
+        length_scale=length_scale,
+        hydraulic_diameter=hydraulic_diameter,
+        kinematic_viscosity=kinematic_viscosity,
+    )
+    return TurbulenceInletResponse(**dataclasses.asdict(estimate))
 
 
 # ============================================================================

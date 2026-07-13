@@ -376,12 +376,12 @@ def test_import_geometry_surfaces_the_typed_error(tmp_path):
 # estimate_wall_spacing (#67): pure wall-spacing calculator, callable via MCP
 # ---------------------------------------------------------------------------
 
-def test_estimate_wall_spacing_is_registered_as_tool_twenty_two():
+def test_estimate_wall_spacing_is_registered():
     import asyncio
 
     names = {t.name for t in asyncio.run(fs.mcp.list_tools())}
     assert "estimate_wall_spacing" in names
-    assert len(names) == 22  # the wall-spacing calculator joins the 21 existing tools
+    # The tool count is pinned by the newest tool's registration test below.
 
 
 def test_estimate_wall_spacing_returns_the_typed_estimate():
@@ -417,3 +417,44 @@ def test_estimate_wall_spacing_surfaces_the_typed_error():
         asyncio.run(fn(velocity=-1.0, characteristic_length=1.0,
                        kinematic_viscosity=1.5e-5, target_y_plus=1.0,
                        flow_type="external", expansion_ratio=1.2))
+
+
+# ---------------------------------------------------------------------------
+# estimate_turbulence_inlet (#68): inlet k/epsilon/omega, callable via MCP
+# ---------------------------------------------------------------------------
+
+def test_estimate_turbulence_inlet_is_registered_as_tool_twenty_three():
+    import asyncio
+
+    names = {t.name for t in asyncio.run(fs.mcp.list_tools())}
+    assert "estimate_turbulence_inlet" in names
+    assert len(names) == 23  # the two calculators join the 21 existing tools
+
+
+def test_estimate_turbulence_inlet_returns_the_typed_estimate():
+    # The published pitzDaily inlet (see test_turbulence_inlet_unit.py for
+    # the provenance): U=10, I=5%, l=0.00254 m, nu=1e-5 — the wrapper passes
+    # scalars through and returns the typed result unchanged.
+    import asyncio
+
+    fn = getattr(fs.estimate_turbulence_inlet, "fn", fs.estimate_turbulence_inlet)
+    resp = asyncio.run(fn(velocity=10.0, intensity=0.05, length_scale=0.00254,
+                          hydraulic_diameter=None, kinematic_viscosity=1e-5))
+
+    assert resp.k.value == pytest.approx(0.375)        # published 0/k value
+    assert resp.epsilon.value == pytest.approx(14.855, rel=1e-3)  # 0/epsilon
+    assert resp.k.formula == "k = 3/2*(U*I)^2"
+    assert resp.c_mu == 0.09
+    assert resp.viscosity_ratio.value == pytest.approx(85.199, rel=1e-3)
+    assert resp.assumptions == []
+
+
+def test_estimate_turbulence_inlet_surfaces_the_typed_error():
+    import asyncio
+
+    import turbinlet
+
+    fn = getattr(fs.estimate_turbulence_inlet, "fn", fs.estimate_turbulence_inlet)
+    with pytest.raises(turbinlet.TurbulenceInletError, match="exactly one"):
+        asyncio.run(fn(velocity=10.0, intensity=None, length_scale=None,
+                       hydraulic_diameter=None, kinematic_viscosity=None))
