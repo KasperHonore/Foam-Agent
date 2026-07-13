@@ -656,3 +656,189 @@ def test_stop_case_graceful_stops_a_cooperative_run_and_keeps_evidence(
     assert "stopped deliberately via stop_case (graceful)" in row["notes"]
     assert stop.note == "stopped deliberately via stop_case (graceful)"
     assert not (Path(case_dir) / "Allrun.pid").exists()
+
+
+def test_stop_case_skips_graceful_without_run_time_modifiable(tmp_path, fake_allrun):
+    # Harvest #73: with runTimeModifiable absent (compiled default FALSE)
+    # the writeNow edit is never seen — 35 s of nothing, verified live — so
+    # the stop must go straight to the kill ladder and leave the dict alone.
+    case_dir = _make_case(tmp_path)                  # no runTimeModifiable
+    control_dict = Path(case_dir) / "system" / "controlDict"
+    before = control_dict.read_text()
+    fake_allrun(INCOMPLETE_LOG)                      # ignores the graceful cue
+    start = mechanics.start_case(case_dir, run_directory=str(tmp_path))
+    _wait_for_file(Path(case_dir) / "log.icoFoam")
+
+    stop = mechanics.stop_case(start.run_id, grace_seconds=15.0,
+                               run_directory=str(tmp_path))
+
+    assert stop.method == "killed"
+    assert control_dict.read_text() == before        # never touched
+    # Killed run: log has no End -> the same error gate -> debugging.
+    assert stop.status == "debugging"
+    assert stop.result == "pending"
+    assert stop.errors and stop.errors[0]["file"] == "log.icoFoam"
+    row = _row(tmp_path, "cavity")
+    assert (row["status"], row["result"]) == ("debugging", "pending")
+    assert "stopped deliberately via stop_case (killed)" in row["notes"]
+    assert not (Path(case_dir) / "Allrun.pid").exists()
+
+
+def test_stop_case_kills_a_defiant_run_after_the_grace_window(tmp_path, fake_allrun):
+    # runTimeModifiable true, but the child ignores the writeNow cue: the
+    # bounded grace window expires, the kill ladder fires, and stopAt is
+    # restored afterwards so a rerun does not insta-stop.
+    case_dir = _make_graceful_case(tmp_path)
+    fake_allrun(INCOMPLETE_LOG)                      # ignores the graceful cue
+    start = mechanics.start_case(case_dir, run_directory=str(tmp_path))
+    _wait_for_file(Path(case_dir) / "log.icoFoam")
+
+    stop = mechanics.stop_case(start.run_id, grace_seconds=0.5,
+                               run_directory=str(tmp_path))
+
+    assert stop.method == "killed"
+    assert stop.note == "stopped deliberately via stop_case (killed)"
+    restored = (Path(case_dir) / "system" / "controlDict").read_text()
+    assert "writeNow" not in restored                # restored after the kill
+    assert re.search(r"stopAt\s+endTime;", restored)
+    assert stop.status == "debugging"
+    assert not (Path(case_dir) / "Allrun.pid").exists()
+
+
+@pytest.mark.skipif(os.name == "nt",
+                    reason="SIGTERM/SIGKILL escalation is POSIX-only")
+def test_stop_case_escalates_to_sigkill_for_a_term_ignoring_run(tmp_path,
+                                                                monkeypatch):
+    # The final rung: a child that ignores SIGTERM must still die to the
+    # SIGKILL escalation (harvest kept SIGKILL as the last rung).
+    case_dir = _make_case(tmp_path)
+    script = tmp_path / "term_ignoring_allrun.py"
+    script.write_text(
+        "import signal, time\n"
+        "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+        f"with open('log.icoFoam', 'w') as fh:\n"
+        f"    fh.write({INCOMPLETE_LOG!r})\n"
+        "time.sleep(30)\n"
+    )
+    monkeypatch.setattr(mechanics, "_allrun_argv",
+                        lambda case_dir: [sys.executable, str(script)])
+    monkeypatch.setattr(mechanics, "_KILL_ESCALATION_SECONDS", 0.5)
+    start = mechanics.start_case(case_dir, run_directory=str(tmp_path))
+    _wait_for_file(Path(case_dir) / "log.icoFoam")
+
+    stop = mechanics.stop_case(start.run_id, grace_seconds=0,
+                               run_directory=str(tmp_path))
+
+    assert stop.method == "killed"
+    assert stop.status == "debugging"
+    assert not mechanics._pid_alive(start.pid)
+
+
+def test_stop_case_on_a_run_that_just_exited_stamps_normally(tmp_path, fake_allrun,
+                                                             isolated_registry):
+    # Idempotence: the run exited on its own between the caller's poll and
+    # the stop call — stamped through the normal completion path, reported
+    # as such, and NOT marked as a deliberate stop (nothing was stopped).
+    case_dir = _make_case(tmp_path)
+    fake_allrun(GOOD_LOG)
+    start = mechanics.start_case(case_dir, run_directory=str(tmp_path))
+    _cue_exit(case_dir)
+    isolated_registry[start.run_id].process.wait(timeout=20)
+
+    stop = mechanics.stop_case(start.run_id, run_directory=str(tmp_path))
+
+    assert stop.method == "already_exited"
+    assert stop.note is None
+    assert (stop.status, stop.result) == ("done", "converged")
+    row = _row(tmp_path, "cavity")
+    assert (row["status"], row["result"]) == ("done", "converged")
+    assert "stop_case" not in row["notes"]           # no deliberate-stop note
+    assert not (Path(case_dir) / "Allrun.pid").exists()
+
+
+def test_stop_case_unknown_run_id_is_a_typed_error(tmp_path):
+    _make_case(tmp_path)  # ledger exists, but not this id
+
+    with pytest.raises(mechanics.BackgroundRunError, match="0042"):
+        mechanics.stop_case("0042", run_directory=str(tmp_path))
+
+
+def test_stop_case_on_a_run_that_never_ran_is_a_typed_error(tmp_path):
+    _make_case(tmp_path)  # planned row: no process, no pidfile
+
+    with pytest.raises(mechanics.BackgroundRunError, match="not? live|no live"):
+        mechanics.stop_case("0001", run_directory=str(tmp_path))
+
+    assert _row(tmp_path, "cavity")["status"] == "planned"  # row untouched
+
+
+def test_stop_case_preserves_an_existing_note(tmp_path, graceful_allrun):
+    # The sanctioned note write APPENDS: a hand-written note survives.
+    case_dir = _make_graceful_case(tmp_path)
+    graceful_allrun(GOOD_LOG)
+    start = mechanics.start_case(case_dir, run_directory=str(tmp_path))
+    _wait_for_file(Path(case_dir) / "log.icoFoam")
+    mechanics.set_run_note(start.run_id, note="baseline mesh study",
+                           run_directory=str(tmp_path))
+
+    stop = mechanics.stop_case(start.run_id, grace_seconds=15.0,
+                               run_directory=str(tmp_path))
+
+    assert stop.note == ("baseline mesh study; "
+                         "stopped deliberately via stop_case (graceful)")
+    assert _row(tmp_path, "cavity")["notes"] == stop.note
+
+
+# ---------------------------------------------------------------------------
+# The pure stop helpers, exercised on temp files
+# ---------------------------------------------------------------------------
+
+def test_touch_past_mtime_gate_sets_a_future_mtime(tmp_path):
+    # The gate: fileMonitor needs newTime > mtime-at-last-read + 10 s (the
+    # fileModificationSkew default), so the touch must land safely past it.
+    target = tmp_path / "controlDict"
+    target.write_text("stopAt writeNow;")
+
+    before = time.time()
+    mechanics._touch_past_mtime_gate(str(target))
+
+    assert target.stat().st_mtime > before + 10.0
+
+
+def test_set_control_dict_entry_rewrites_in_place_and_appends(tmp_path):
+    control_dict = tmp_path / "controlDict"
+    control_dict.write_text(
+        "application     icoFoam;\nstopAt          endTime;\nendTime  0.5;\n")
+
+    # An existing entry is rewritten in place, everything else untouched.
+    mechanics._set_control_dict_entry(str(control_dict), "stopAt", "writeNow")
+    text = control_dict.read_text()
+    assert re.search(r"^stopAt\s+writeNow;$", text, re.MULTILINE)
+    assert text.count("stopAt") == 1
+    assert "application     icoFoam;" in text and "endTime  0.5;" in text
+
+    # A missing entry is appended (stopAt has a compiled default and may be
+    # absent from generated dicts).
+    control_dict.write_text("application     icoFoam;\n")
+    mechanics._set_control_dict_entry(str(control_dict), "stopAt", "writeNow")
+    assert re.search(r"^stopAt\s+writeNow;$", control_dict.read_text(),
+                     re.MULTILINE)
+
+
+def test_run_time_modifiable_reads_the_switch(tmp_path):
+    case_dir = tmp_path / "case"
+    (case_dir / "system").mkdir(parents=True)
+    control_dict = case_dir / "system" / "controlDict"
+
+    control_dict.write_text("runTimeModifiable true;\n")
+    assert mechanics._run_time_modifiable(str(case_dir)) is True
+    control_dict.write_text("runTimeModifiable yes;\n")
+    assert mechanics._run_time_modifiable(str(case_dir)) is True
+    control_dict.write_text("runTimeModifiable false;\n")
+    assert mechanics._run_time_modifiable(str(case_dir)) is False
+    # ABSENT entry = the compiled default = false (harvest #73, Time.C:363).
+    control_dict.write_text("application icoFoam;\n")
+    assert mechanics._run_time_modifiable(str(case_dir)) is False
+    # No controlDict at all: graceful is impossible, never an exception.
+    control_dict.unlink()
+    assert mechanics._run_time_modifiable(str(case_dir)) is False
