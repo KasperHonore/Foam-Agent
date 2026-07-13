@@ -71,6 +71,9 @@ src/
   wallspacing.py       # pure wall-spacing calculator: first-cell centre/height
                        # from flow conditions and a target y+, named correlations,
                        # regime verdict with evidence
+  turbinlet.py         # inlet turbulence calculator (pure math): k/epsilon/omega
+                       # with formula names, C_mu pinned server-side, stated
+                       # assumptions for every applied default
   mcp/                 # FastMCP server exposing mechanics as tools (see src/mcp/README.md)
   translation/         # rules-based Foundation→ESI case translation
 database/
