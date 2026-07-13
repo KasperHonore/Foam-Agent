@@ -367,10 +367,15 @@ async def run_case(
         mechanics.run_allrun_and_collect_errors, case_dir, timeout, 1
     )
 
-    log_files = sorted(
-        f for f in os.listdir(case_dir)
-        if f.startswith("log") or f in ("Allrun.out", "Allrun.err")
-    )
+    try:
+        log_files = sorted(
+            f for f in os.listdir(case_dir)
+            if f.startswith("log") or f in ("Allrun.out", "Allrun.err")
+        )
+    except (FileNotFoundError, NotADirectoryError):
+        # Vanished case dir (issue #78): the errors list already carries the
+        # infrastructure evidence — return it instead of crashing here.
+        log_files = []
     status = "success" if not errors else "failed"
     await ctx.info(f"Simulation {status} with {len(errors)} error(s)")
     return RunCaseResponse(status=status, errors=errors, log_files=log_files)
