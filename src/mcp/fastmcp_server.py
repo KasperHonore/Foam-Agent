@@ -71,6 +71,16 @@ run takes, so the ledger cannot tell the two execution modes apart. One
 solver per case directory: run_case and start_case both refuse a case that
 already has a live background run.
 
+If a background run is going wrong — residuals climbing, a setup mistake —
+stop_case stops it and keeps the evidence: graceful first (the solver
+finishes the current time step, WRITES the current fields and exits
+cleanly; requires runTimeModifiable true in controlDict, which v10 does
+NOT default to — emit it explicitly in cases meant for background runs),
+then a process-group kill when the bounded grace window expires. Either
+way the row is stamped through the same completion path as any finished
+run and carries a note naming the deliberate stop, so a stopped run never
+reads like a crash, and stopAt is restored so a rerun behaves normally.
+
 After (or during) a run, parse_solver_log turns the solver log into typed
 convergence facts — per-field residuals, Courant numbers, continuity errors,
 completion, and a verdict with evidence. Prefer it over reading raw logs:
@@ -602,6 +612,45 @@ async def case_status(
     payload["progress"] = (SolverLogResponse(**payload["progress"])
                            if payload["progress"] is not None else None)
     return CaseStatusResponse(**payload)
+
+
+class StopCaseResponse(BaseModel):
+    run_id: str = Field(description="Ledger run id the stop resolved (zero-padded)")
+    case: str = Field(description="Case key (case directory relative to the runs root)")
+    status: str = Field(description="Ledger Status after the stop: 'done' or 'debugging', stamped through the identical completion path a finished run takes")
+    result: str = Field(description="Ledger Result after the stop: the conservative parser-backed verdict ('pending' when the row gated to debugging)")
+    method: str = Field(description="'graceful' (the solver honored stopAt writeNow within the grace window and wrote the current fields), 'killed' (process group terminated — graceful timed out or was impossible without runTimeModifiable true), or 'already_exited' (the run finished on its own before this call; stamped normally, no stop note)")
+    note: Optional[str] = Field(description="The deliberate-stop note recorded on the row's Notes cell (None for 'already_exited')")
+    errors: List[dict] = Field(description="Extracted errors when the completion gate landed on 'debugging' (empty otherwise): [{file, error_content}]")
+
+
+@mcp.tool(name="stop_case")
+async def stop_case(
+    run_id: str = Field(description="Ledger run id from start_case or runs/ledger.md (zero-padded, e.g. '0003'; unpadded '3' is accepted)"),
+    grace_seconds: float = Field(default=30.0, description="Bounded window for the graceful stop before the process group is killed; a solver exits at the next time-step boundary, so scale this with the case's per-step wall time. 0 skips graceful and kills immediately."),
+    ctx: Context = None,
+) -> StopCaseResponse:
+    """Stop a background run and keep the evidence: graceful first, kill on
+    timeout, the row stamped like any finished run plus a note naming the
+    deliberate stop.
+
+    Graceful requires runTimeModifiable true in the case's controlDict
+    (v10's compiled default is FALSE — absent means the solver can never
+    see the edit and the kill is immediate): stopAt writeNow is written
+    with the mtime handling that makes the running solver actually notice
+    it, so it finishes the current time step, WRITES the current fields and
+    exits cleanly — the stopped case keeps analyzable time directories for
+    post-mortem. When the grace window expires (or graceful was
+    impossible), the whole process group is terminated instead. Either way
+    stopAt is restored to endTime (a leftover writeNow would insta-stop any
+    rerun), and the row is stamped through the identical completion path a
+    finished run takes with the deliberate stop recorded in Notes, so it
+    never reads like a crash. A run that exited on its own just before the
+    call is stamped normally and reported 'already_exited' — not an error.
+    Typed errors: unknown run id; a run that is not live.
+    """
+    result = await asyncio.to_thread(mechanics.stop_case, run_id, grace_seconds)
+    return StopCaseResponse(**dataclasses.asdict(result))
 
 
 # ============================================================================

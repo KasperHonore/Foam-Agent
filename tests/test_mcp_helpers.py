@@ -523,12 +523,12 @@ def test_start_case_is_registered():
     # The tool count is pinned by the newest tool's registration test below.
 
 
-def test_case_status_is_registered_as_tool_twenty_five():
+def test_case_status_is_registered():
     import asyncio
 
     names = {t.name for t in asyncio.run(fs.mcp.list_tools())}
     assert "case_status" in names
-    assert len(names) == 25  # the background run pair joins the 23 existing tools
+    # The tool count is pinned by the newest tool's registration test below.
 
 
 def test_start_case_then_case_status_returns_the_typed_lifecycle(background_case):
@@ -557,6 +557,48 @@ def test_start_case_then_case_status_returns_the_typed_lifecycle(background_case
     assert final.status == "done"
     assert final.result == "converged"
     assert final.errors == []
+
+
+# ---------------------------------------------------------------------------
+# stop_case (#75): graceful-first stop, callable via MCP
+# ---------------------------------------------------------------------------
+
+def test_stop_case_is_registered_as_tool_twenty_six():
+    import asyncio
+
+    names = {t.name for t in asyncio.run(fs.mcp.list_tools())}
+    assert "stop_case" in names
+    assert len(names) == 26  # the stop tool completes the background trio
+
+
+def test_stop_case_stops_the_run_and_returns_the_typed_outcome(background_case):
+    import asyncio
+    import time
+
+    start_fn = getattr(fs.start_case, "fn", fs.start_case)
+    start = asyncio.run(start_fn(case_dir=background_case))
+    assert start.status == "running"
+
+    # Startup handshake: the completion stamp below reads the child's log,
+    # so wait until it has been written before stopping.
+    deadline = time.time() + 20
+    while time.time() < deadline and not (Path(background_case) / "log.icoFoam").exists():
+        time.sleep(0.02)
+
+    # The fixture's controlDict has no runTimeModifiable (v10 default:
+    # false), so the mechanics take the kill route — the wrapper passes the
+    # typed outcome through either way.
+    stop_fn = getattr(fs.stop_case, "fn", fs.stop_case)
+    stop = asyncio.run(stop_fn(run_id=start.run_id, grace_seconds=5.0))
+
+    assert stop.run_id == start.run_id
+    assert stop.method == "killed"
+    assert stop.note == "stopped deliberately via stop_case (killed)"
+    # The fixture child wrote GOOD_LOG up front: the completion gate reads
+    # a clean, End-marked log and stamps done/converged despite the kill.
+    assert stop.status == "done"
+    assert stop.result == "converged"
+    assert stop.errors == []
 
 
 def test_case_status_mid_run_progress_is_the_solver_log_response(background_case):
