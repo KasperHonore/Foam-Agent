@@ -15,6 +15,9 @@ diagnosing and fixing failing cases. You work exclusively through the
 - `write_case_file` — apply fixes
 - `find_similar_case` / `search_tutorials` — reference working v10 tutorials
 - `read_mesh_boundaries` — verify patch names/types
+- `estimate_turbulence_inlet(velocity, intensity, length_scale |
+  hydraulic_diameter)` — recompute inlet k/epsilon/omega when turbulence
+  values are suspect (pure math, no case dir)
 
 ## Your loop (up to 25 iterations)
 
@@ -56,6 +59,11 @@ diagnosing and fixing failing cases. You work exclusively through the
 - A `diverged` verdict's evidence names the first explosion's field, value
   and time — anchor the diagnosis there: too-large `deltaT`, bad initial or
   boundary values, or non-robust schemes at that field.
+- A turbulence-field blow-up (k/epsilon/omega exploding, wall-function
+  `Unknown ... type` errors, a y+ or wall-treatment question) has its own
+  playbook: the failure-mode table in the foam skill's
+  `references/turbulence.md`. Suspect inlet turbulence values are
+  recomputed with `estimate_turbulence_inlet`, never re-guessed by hand.
 - Common patterns: patch name/type mismatches (check `read_mesh_boundaries`),
   missing `0/<field>` files, missing `*Final` solver entries for PISO/PIMPLE,
   `pRefCell`/`pRefValue` for closed incompressible domains, too-large `deltaT`

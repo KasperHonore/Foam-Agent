@@ -25,7 +25,12 @@ placeholder text.
   be `empty` in every field file; `wall` patches take wall conditions, etc.
 - Units and dimensions must be correct on every field (`dimensions [...]`).
 - Solver settings must be consistent with the user requirement (turbulence
-  model, transient vs steady, compressible vs incompressible).
+  model, transient vs steady, compressible vs incompressible). For a
+  turbulent case the model choice and the wall BC sets on the 0/
+  turbulence fields come from [turbulence.md](turbulence.md) (the
+  selection ladder; the per-model v10 wall-function tables), and the inlet
+  k/epsilon/omega values from `estimate_turbulence_inlet` — computed,
+  never recalled.
 
 ## fvSolution: `*Final` entries (transient PISO/PIMPLE solvers)
 

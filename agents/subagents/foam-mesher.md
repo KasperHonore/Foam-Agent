@@ -25,6 +25,9 @@ Tools for this branch:
   pass/warn/fail and a verdict with evidence naming the failing metrics
 - `read_mesh_boundaries(case_dir)` — patch names after conversion
 - `read_case_file` / `write_case_file` — inspect and fix files (e.g. `constant/polyMesh/boundary`)
+- `estimate_wall_spacing(velocity, characteristic_length, kinematic_viscosity,
+  target_y_plus, flow_type, expansion_ratio)` — first-cell sizing for
+  turbulent wall refinement (pure math, no case dir; both branches use it)
 
 ### Process (GMSH)
 
@@ -86,10 +89,20 @@ Tools for this branch:
   group) before saving — `run_python_script` returns your stdout, and that
   table is how you verify the mesh before conversion.
 - For local refinement use mesh size fields: a `Distance` field on the
-  obstacle curves + a `Threshold` field ramping from the wall size (e.g.
-  D/20) to the far-field size over a chosen distance band, then
-  `gmsh.model.mesh.field.setAsBackgroundMesh`. This is also the lever for
-  fixing assess_mesh geometry failures (skewness, aspect ratio).
+  obstacle curves + a `Threshold` field ramping from the wall size to the
+  far-field size over a chosen distance band, then
+  `gmsh.model.mesh.field.setAsBackgroundMesh`. **On a turbulent case the
+  wall size is a computed number, not a geometric guess**: call
+  `estimate_wall_spacing` with the flow conditions and the target y+ (the
+  wall-treatment decision — band table in the foam skill's
+  `references/turbulence.md`) and set the wall size to its labelled
+  `first_cell_height` field. GMSH tets are isotropic, so that wall size IS
+  roughly the first cell's wall-normal extent (the reference's GMSH-branch
+  bridge; it also warns that a wall-resolved y+ ~ 1 target prices in
+  enormous cell counts here — prefer the snappy pathway with layers when
+  that is the target). A laminar case falls back to a geometric fraction
+  (e.g. D/20). This size field is also the lever for fixing assess_mesh
+  geometry failures (skewness, aspect ratio).
 - `gmsh.option.setNumber('Mesh.MshFileVersion', 2.2)` for OpenFOAM
   compatibility; save as `geometry.msh`; call `gmsh.finalize()`.
 
@@ -175,6 +188,19 @@ deliberately no upload tool).
    `references/snappyhexmesh.md`, regenerate (back to step 3 or 4), and
    reassess. On `warnings`, judge against the application with
    `references/mesh-quality.md`.
+7. **Add boundary layers** (turbulent cases — only after the snapped mesh
+   verifies; `addLayers off` first is the reference's conservative start):
+   size the stack by arithmetic, not eyeballed relative knobs. Call
+   `estimate_wall_spacing` with the flow conditions and the case's target
+   y+ (`flow_type="internal"` for duct/pipe flow), read the labelled
+   `first_cell_height` field (the HEIGHT — never derive it from
+   `first_cell_centre_distance` by hand) and `suggested_layer_count`, and
+   turn them into `finalLayerThickness` / `minThickness` /
+   `nSurfaceLayers` with the absolute-to-relative bridge in the foam
+   skill's `references/turbulence.md` — it consumes the background cell
+   size and surface refinement level you chose in step 3. Switch
+   `addLayers on;`, rerun `snappyHexMesh -overwrite`, then repeat steps
+   5–6 — layers move `max_aspect_ratio` first.
 
 ## Reporting (both branches)
 

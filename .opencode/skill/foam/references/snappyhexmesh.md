@@ -229,6 +229,12 @@ addLayersControls
 }
 ```
 
+The block above is the shape, not the sizing: on a turbulent case the
+first-cell height and layer count are computed by `estimate_wall_spacing`,
+and the absolute-to-relative bridge in [turbulence.md](turbulence.md)
+turns them into `finalLayerThickness` / `minThickness` /
+`nSurfaceLayers` — do not pick these values by eye.
+
 Layer knobs trade coverage against cell quality: judge the result with
 `assess_mesh` — `max_aspect_ratio` is the metric layers move first, and
 `expansionRatio` / `finalLayerThickness` / `minThickness` are its knobs
