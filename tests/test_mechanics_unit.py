@@ -94,6 +94,22 @@ def test_check_foam_errors_success(tmp_path):
     assert mechanics.check_foam_errors(str(tmp_path)) == []
 
 
+def test_check_foam_errors_vanished_case_dir(tmp_path):
+    # Issue #78: a case directory deleted mid-run (external cleanup, changed
+    # bind mount) must come back as an actionable infrastructure error, not
+    # an uncaught FileNotFoundError — case_status/stop_case/run_case all
+    # route their completion gate through this function.
+    gone = tmp_path / "was_here"
+    gone.mkdir()
+    gone.rmdir()
+    errors = mechanics.check_foam_errors(str(gone))
+    assert len(errors) == 1
+    assert errors[0]["file"] == "case_dir"
+    assert "vanished" in errors[0]["error_content"]
+    assert "bind mount" in errors[0]["error_content"]
+    assert str(gone) in errors[0]["error_content"]
+
+
 def test_extract_commands_from_allrun_out(tmp_path):
     out = tmp_path / "Allrun.out"
     out.write_text("Running blockMesh on case\nnoise\nRunning icoFoam on case\n")

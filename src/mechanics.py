@@ -423,7 +423,26 @@ def check_foam_errors(directory: str) -> list:
 
     pattern = re.compile(r"ERROR:(.*)", re.DOTALL)
 
-    for file in os.listdir(directory):
+    try:
+        entries = os.listdir(directory)
+    except (FileNotFoundError, NotADirectoryError):
+        # Issue #78: the case directory can disappear mid-run (runs/ bind
+        # mount changed, or the files were deleted externally). That is an
+        # infrastructure failure, not a solver error — report it as evidence
+        # so the completion gate lands the run in debugging instead of the
+        # tool call crashing.
+        return [{
+            "file": "case_dir",
+            "error_content": (
+                f"Case directory vanished: {directory} no longer exists on "
+                "the server. Infrastructure problem, not a solver error — "
+                "the runs/ bind mount changed or the case was deleted "
+                "externally while the run was in flight. Check the runs/ "
+                "mount with scripts/doctor.py, then re-create the case."
+            ),
+        }]
+
+    for file in entries:
         if file.startswith("log"):
             filepath = os.path.join(directory, file)
             try:
