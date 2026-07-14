@@ -41,6 +41,25 @@ Yes, two ways: drop a GMSH `.msh` file at the repo root and mention it in your p
 
 MCP registration and skills are committed for **Claude Code** (`.mcp.json`, `.claude/`), **Cursor** (`.cursor/`), **Codex** (`.codex/`), and **OpenCode** (`opencode.json`, `.opencode/`). Any other MCP-capable agent works too: point it at `http://localhost:7860/mcp` and it will find the skills via `AGENTS.md`. (pi is not supported: it has no MCP client, so the server would have no way to lend it hands.)
 
+### Does it work with Claude Desktop / Cowork?
+
+Only as a self-serve path — unlike the CLIs above, Claude Desktop has no way to pick up MCP registration from a repo, so nothing is committed for it.
+
+**Classic Claude Desktop chat** works if you add the server to your own `claude_desktop_config.json` (`%APPDATA%\Claude\` on Windows, `~/Library/Application Support/Claude/` on macOS):
+
+```json
+{
+  "mcpServers": {
+    "foamagent": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://localhost:7860/mcp", "--allow-http"]
+    }
+  }
+}
+```
+
+**Cowork mode ignores that file** ([Anthropic docs](https://claude.com/docs/cowork/3p/extensions)), and URL-based custom connectors don't help either — they connect from Anthropic's cloud, which cannot reach `localhost:7860`. Instead, register the same command directly in Cowork under **Settings → Developer** (admin permitting): `npx -y mcp-remote http://localhost:7860/mcp --allow-http`. Background in [#27](https://github.com/KasperHonore/Foam-Agent/issues/27).
+
 ### Do I need a GPU?
 
 No. Embeddings run fine on CPU, and OpenFOAM is CPU-based. For big cases there's SLURM support (`submit_slurm_job`) to push runs to a cluster.
